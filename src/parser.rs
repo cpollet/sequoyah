@@ -1,21 +1,23 @@
 use crate::parser::string::{quoted_string, unquoted_string};
+use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alpha1, alphanumeric0, multispace0, multispace1};
-use nom::combinator::{opt, recognize};
+use nom::combinator::{map, opt, recognize};
 use nom::error::Error;
-use nom::sequence::{pair, preceded};
+use nom::multi::many0;
+use nom::sequence::{delimited, pair, preceded};
 use nom::{Finish, IResult, Parser};
 
-pub fn parse_component(input: &str) -> Result<Component, Error<&str>> {
+pub fn parse_component(input: &str) -> Result<Component<'_>, Error<&str>> {
     component(input).finish().map(|(_, c)| c)
 }
 
-pub fn parse_message(input: &str) -> Result<Message, Error<&str>> {
+pub fn parse_message(input: &str) -> Result<Message<'_>, Error<&str>> {
     message(input).finish().map(|(_, m)| m)
 }
 
 mod string {
-    // from: https://github.com/rust-bakery/nom/blob/main/examples/string.rs
+    // initially from: https://github.com/rust-bakery/nom/blob/main/examples/string.rs
     use nom::branch::alt;
     use nom::bytes::complete::is_not;
     use nom::character::complete::{char, multispace1};
@@ -35,7 +37,7 @@ mod string {
             |input| build_string(input, quoted_str_fragment),
             char('"'),
         )
-            .parse(input)
+        .parse(input)
     }
 
     /// Parse an unquoted string that stops at a newline (or end of input).
@@ -56,9 +58,7 @@ mod string {
     }
 
     /// Parse a non-empty block of text that doesn't include \ or a newline
-    fn text_no_newline<'a, E: ParseError<&'a str>>(
-        input: &'a str,
-    ) -> IResult<&'a str, &'a str, E> {
+    fn text_no_newline<'a, E: ParseError<&'a str>>(input: &'a str) -> IResult<&'a str, &'a str, E> {
         let not_quote_slash_newline = is_not("\\\n");
 
         verify(not_quote_slash_newline, |s: &str| !s.is_empty()).parse(input)
@@ -154,13 +154,13 @@ fn identifier(input: &str) -> IResult<&str, &str> {
     recognize(pair(alpha1, alphanumeric0)).parse(input)
 }
 
-fn component(input: &str) -> IResult<&str, Component> {
+fn component(input: &str) -> IResult<&str, Component<'_>> {
     (
         tag("component"),
         multispace1,
         quoted_string,
         multispace0,
-        tag("as"),
+        tag("as"), // todo: this is optional
         multispace1,
         identifier,
         multispace0,
@@ -172,48 +172,87 @@ fn component(input: &str) -> IResult<&str, Component> {
                 rest,
                 Component {
                     kind: ComponentKind::Component,
-                    name: name.to_string(),
-                    alias: Some(alias.to_string()),
+                    name,
+                    alias: Some(alias),
                 },
             )
         })
 }
 
-/// Parse a message of the form `a -> b` optionally followed by `: text`.
+/// Parse an attribute value: either an identifier or a quoted string.
+fn value(input: &str) -> IResult<&str, Value<'_>> {
+    alt((
+        map(identifier, Value::Identifier),
+        map(quoted_string, Value::Quoted),
+    ))
+    .parse(input)
+}
+
+/// Parse a single `key = value` attribute pair, optionally followed by a `,`.
 ///
-/// The only mandatory part is `a -> b`, where `a` and `b` are identifiers. The
-/// `:` and the text that follows are optional. The text may contain any
-/// character except a newline; a newline must be written as the `\n` escape.
-fn message(input: &str) -> IResult<&str, Message> {
+/// Whitespace is tolerated around the `=` and around the trailing comma.
+fn attribute(input: &str) -> IResult<&str, Attribute<'_>> {
+    delimited(
+        multispace0,
+        (
+            identifier,
+            multispace0,
+            tag("="),
+            multispace0,
+            value,
+            multispace0,
+            opt(tag(",")),
+        ),
+        multispace0,
+    )
+    .parse(input)
+    .map(|(rest, (key, _, _, _, value, _, _))| (rest, Attribute { key, value }))
+}
+
+/// Parse a `[ ... ]` attribute block: comma-separated `key = value` pairs with an
+/// optional trailing comma.
+fn attributes(input: &str) -> IResult<&str, Vec<Attribute<'_>>> {
+    delimited(tag("["), many0(attribute), tag("]")).parse(input)
+}
+
+/// Parse a message of the form `a -> b` optionally followed by `[ ... ]` attribute block
+/// optionally followed by `: text`.
+///
+/// The only mandatory part is `a -> b`, where `a` and `b` are identifiers. The text may contain
+/// any character except a newline; a newline must be written as the `\n` escape.
+fn message(input: &str) -> IResult<&str, Message<'_>> {
     (
         identifier,
         multispace0,
         tag("->"),
         multispace0,
         identifier,
+        opt(preceded(multispace0, attributes)),
         opt(preceded(
             multispace0,
             preceded(tag(":"), preceded(multispace0, unquoted_string)),
         )),
     )
         .parse(input)
-        .map(|(rest, (from, _, _, _, to, message))| {
+        .map(|(rest, (from, _, _, _, to, attributes, message))| {
             (
                 rest,
                 Message {
-                    from: from.to_string(),
-                    to: to.to_string(),
+                    from,
+                    to,
+                    attributes: attributes.unwrap_or_default(),
                     message,
                 },
             )
         })
 }
 
+#[allow(unused)]
 #[derive(Debug)]
-pub struct Component {
+pub struct Component<'input> {
     kind: ComponentKind,
     name: String,
-    alias: Option<String>,
+    alias: Option<&'input str>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -221,20 +260,34 @@ enum ComponentKind {
     Component,
 }
 
+#[allow(unused)]
 #[derive(Debug)]
-pub struct Message {
-    from: String,
-    to: String,
+pub struct Message<'input> {
+    from: &'input str,
+    to: &'input str,
+    attributes: Vec<Attribute<'input>>,
     message: Option<String>,
+}
+
+#[allow(unused)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct Attribute<'input> {
+    key: &'input str,
+    value: Value<'input>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Value<'input> {
+    Identifier(&'input str),
+    Quoted(String),
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{message, parse_message};
+    use super::{Attribute, Value, message, parse_message};
 
     #[test]
     fn mandatory_arrow_only() {
-        // The only mandatory part is `a -> b`.
         let (rest, msg) = message("s -> d").unwrap();
         assert_eq!(rest, "");
         assert_eq!(msg.from, "s");
@@ -261,8 +314,6 @@ mod tests {
 
     #[test]
     fn extra_whitespace_is_allowed() {
-        // Whitespace around the arrow and before the text is tolerated; the text
-        // itself keeps any trailing whitespace (it is "any character but newline").
         let (rest, msg) = message("a   ->   b   :   hello   ").unwrap();
         assert_eq!(rest, "");
         assert_eq!(msg.from, "a");
@@ -278,28 +329,86 @@ mod tests {
 
     #[test]
     fn newline_must_be_escaped() {
-        // A `\n` escape becomes an actual newline in the parsed text.
         let msg = parse_message("b -> s : first line\\nsecond line").unwrap();
         assert_eq!(msg.message, Some("first line\nsecond line".to_string()));
     }
 
     #[test]
     fn literal_newline_terminates_text() {
-        // A literal newline stops the text and is left in the remaining input.
         let (rest, msg) = message("b -> s : hello\nworld").unwrap();
         assert_eq!(msg.message, Some("hello".to_string()));
         assert_eq!(rest, "\nworld");
     }
 
     #[test]
-    fn brackets_are_ignored() {
-        // Bracket metadata is not part of this grammar, so `b -> s` parses and the
-        // remainder is left untouched.
+    fn no_attributes() {
+        let msg = parse_message("b -> s : GET /path").unwrap();
+        assert_eq!(msg.attributes, vec![]);
+    }
+
+    #[test]
+    fn attributes_with_trailing_comma() {
         let (rest, msg) = message("b -> s [color=red, ] : GET /path").unwrap();
+        assert_eq!(rest, "");
         assert_eq!(msg.from, "b");
         assert_eq!(msg.to, "s");
+        assert_eq!(
+            msg.attributes,
+            vec![Attribute {
+                key: "color",
+                value: Value::Identifier("red"),
+            }],
+        );
+        assert_eq!(msg.message, Some("GET /path".to_string()));
+    }
+
+    #[test]
+    fn multiple_attributes() {
+        let msg = parse_message("a -> b [color=red, size=large,]").unwrap();
+        assert_eq!(
+            msg.attributes,
+            vec![
+                Attribute {
+                    key: "color",
+                    value: Value::Identifier("red"),
+                },
+                Attribute {
+                    key: "size",
+                    value: Value::Identifier("large"),
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn attribute_quoted_value() {
+        let msg = parse_message(r#"a -> b [name="foo bar"]"#).unwrap();
+        assert_eq!(
+            msg.attributes,
+            vec![Attribute {
+                key: "name",
+                value: Value::Quoted("foo bar".to_string()),
+            }],
+        );
+    }
+
+    #[test]
+    fn empty_attribute_block() {
+        let msg = parse_message("a -> b []").unwrap();
+        assert_eq!(msg.attributes, vec![]);
+    }
+
+    #[test]
+    fn attributes_without_text() {
+        let msg = parse_message("a -> b [color=red]").unwrap();
+        assert_eq!(
+            msg.attributes,
+            vec![Attribute {
+                key: "color",
+                value: Value::Identifier("red"),
+            }],
+        );
         assert_eq!(msg.message, None);
-        assert_eq!(rest, " [color=red, ] : GET /path");
     }
 
     #[test]
