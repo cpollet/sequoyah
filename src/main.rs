@@ -6,7 +6,7 @@ fn main() {
 
     println!(
         "{:?}",
-        parser::parse_component("component \"browser\" as b;").unwrap()
+        parser::parse_components("component \"browser\" as b; component server;").unwrap()
     );
 
     println!("{:?}", parser::parse_message("b -> s : GET /path").unwrap());

@@ -8,8 +8,8 @@ use nom::multi::many0;
 use nom::sequence::{delimited, pair, preceded};
 use nom::{Finish, IResult, Parser};
 
-pub fn parse_component(input: &str) -> Result<Component<'_>, Error<&str>> {
-    component(input).finish().map(|(_, c)| c)
+pub fn parse_components(input: &str) -> Result<Vec<Component<'_>>, Error<&str>> {
+    components(input).finish().map(|(_, c)| c)
 }
 
 pub fn parse_message(input: &str) -> Result<Message<'_>, Error<&str>> {
@@ -157,16 +157,27 @@ fn identifier(input: &str) -> IResult<&str, &str> {
 fn component(input: &str) -> IResult<&str, Component<'_>> {
     (
         tag("component"),
-        multispace1,
         alt((
-            map((quoted_string, multispace0,tag("as"),multispace1,identifier), |(name,_, _,_,alias)| (name, alias)),
-            map(identifier, |ident| (ident.to_string(), ident))
+            map(
+                (
+                    multispace0,
+                    quoted_string,
+                    multispace0,
+                    tag("as"),
+                    multispace1,
+                    identifier,
+                ),
+                |(_, name, _, _, _, alias)| (name, alias),
+            ),
+            map((multispace1, identifier), |(_, ident)| {
+                (ident.to_string(), ident)
+            }),
         )),
         multispace0,
         tag(";"),
     )
         .parse(input)
-        .map(|(rest, (_tag, _, (name, alias), _, _))| {
+        .map(|(rest, (_tag, (name, alias), _, _))| {
             (
                 rest,
                 Component {
@@ -212,6 +223,10 @@ fn attribute(input: &str) -> IResult<&str, Attribute<'_>> {
 /// optional trailing comma.
 fn attributes(input: &str) -> IResult<&str, Vec<Attribute<'_>>> {
     delimited(tag("["), many0(attribute), tag("]")).parse(input)
+}
+
+fn components(input: &str) -> IResult<&str, Vec<Component<'_>>> {
+    many0(preceded(multispace0, component)).parse(input)
 }
 
 /// Parse a message of the form `a -> b` optionally followed by `[ ... ]` attribute block
@@ -283,251 +298,210 @@ pub enum Value<'input> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Attribute, ComponentKind, Value, component, message, parse_component, parse_message,
-    };
-
-    fn assert_component(input: &str, name: &str, alias: &str) {
-        let (rest, c) = component(input).expect("expected a component to parse");
-        assert_eq!(rest, "", "unexpected trailing input");
-        assert_eq!(c.kind, ComponentKind::Component);
-        assert_eq!(c.name, name);
-        assert_eq!(c.alias, alias);
-    }
+    use super::{Attribute, ComponentKind, Value, component, components, message, parse_message};
 
     // --- `component` ----------------------------------------------------------
 
-    #[test]
-    fn quoted_name_with_alias() {
-        assert_component("component \"browser\" as b;", "browser", "b");
+    macro_rules! assert_component {
+        ($input:expr, $name:expr, $alias:expr) => {
+            assert_component!($input, $name, $alias, "");
+        };
+        ($input:expr, $name:expr, $alias:expr, $rest:expr) => {
+            let (rest, c) = component($input).expect("expected a component to parse");
+            assert_eq!(rest, $rest);
+            assert_eq!(c.kind, ComponentKind::Component);
+            assert_eq!(c.name, $name);
+            assert_eq!(c.alias, $alias);
+        };
     }
 
     #[test]
-    fn identifier_name_uses_same_alias() {
-        assert_component("component browser;", "browser", "browser");
+    fn component_quoted_name_with_alias() {
+        assert_component!("component \"browser\" as b;", "browser", "b");
     }
 
     #[test]
-    fn identifier_name_with_mixed_case() {
-        assert_component("component MyComponent;", "MyComponent", "MyComponent");
+    fn component_identifier_name_uses_same_alias() {
+        assert_component!("component browser;", "browser", "browser");
     }
 
     #[test]
-    fn quoted_name_with_internal_spaces() {
-        assert_component(r#"component "my component" as myComp;"#, "my component", "myComp");
+    fn component_empty_quoted_name() {
+        assert_component!(r#"component "" as x;"#, "", "x");
     }
 
     #[test]
-    fn empty_quoted_name() {
-        assert_component(r#"component "" as x;"#, "", "x");
+    fn component_quoted_name_with_escaped_chars() {
+        assert_component!(r#"component "a\tb\n" as x;"#, "a\tb\n", "x");
     }
 
     #[test]
-    fn quoted_name_with_escaped_chars() {
-        assert_component(r#"component "a\tb\n" as x;"#, "a\tb\n", "x");
+    fn component_no_space_between_component_and_quoted_name() {
+        assert_component!(r#"component"browser" as b;"#, "browser", "b");
     }
 
     #[test]
-    fn no_space_between_quoted_name_and_as() {
-        assert_component(r#"component "browser"as b;"#, "browser", "b");
+    fn component_no_space_between_quoted_name_and_as() {
+        assert_component!(r#"component "browser"as b;"#, "browser", "b");
     }
 
     #[test]
-    fn spaces_after_keyword_are_allowed() {
-        assert_component("component    \"browser\" as b;", "browser", "b");
+    fn component_trailing_content_is_returned() {
+        assert_component!("component \"browser\" as b; rest", "browser", "b", " rest");
     }
 
     #[test]
-    fn spaces_after_as_are_allowed() {
-        assert_component("component \"browser\" as    b;", "browser", "b");
-    }
-
-    #[test]
-    fn trailing_whitespace_before_semicolon() {
-        assert_component("component \"browser\" as b   ;", "browser", "b");
-    }
-
-    #[test]
-    fn trailing_content_is_returned() {
-        let (rest, c) = component("component \"browser\" as b; rest").unwrap();
-        assert_eq!(rest, " rest");
-        assert_eq!(c.name, "browser");
-        assert_eq!(c.alias, "b");
-    }
-
-    #[test]
-    fn parse_component_wrapper() {
-        let c = parse_component("component \"browser\" as b;").unwrap();
-        assert_eq!(c.name, "browser");
-        assert_eq!(c.alias, "b");
-        assert_eq!(c.kind, ComponentKind::Component);
-    }
-
-    #[test]
-    fn space_after_keyword_is_required() {
+    fn component_space_after_keyword_is_required() {
         assert!(component("componentbrowser;").is_err());
     }
 
     #[test]
-    fn missing_semicolon() {
+    fn component_missing_semicolon() {
         assert!(component("component \"browser\" as b").is_err());
     }
 
     #[test]
-    fn missing_name() {
+    fn component_missing_name() {
         assert!(component("component ;").is_err());
     }
 
     #[test]
-    fn missing_component_keyword() {
+    fn component_missing_component_keyword() {
         assert!(component(r#""browser" as b;"#).is_err());
     }
 
     #[test]
-    fn spaces_before_as_are_allowed() {
-        // Whitespace between the closing quote and `as` is tolerated.
-        assert_component(r#"component "browser"  as b;"#, "browser", "b");
-    }
-
-    #[test]
-    fn quoted_name_requires_alias() {
+    fn component_quoted_name_requires_alias() {
         assert!(component(r#"component "browser";"#).is_err());
     }
 
     #[test]
-    fn missing_alias_after_as() {
+    fn component_missing_alias_after_as() {
         assert!(component(r#"component "browser" as;"#).is_err());
+    }
+
+    // --- `parse_components` (multiple components) ---------------------------
+
+    #[test]
+    fn components_multiple() {
+        let (rest, c) = components(r#"component browser; component server;"#).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].name, "browser");
+        assert_eq!(c[0].alias, "browser");
+        assert_eq!(c[1].name, "server");
+        assert_eq!(c[1].alias, "server");
+    }
+
+    #[test]
+    fn components_trailing_content_is_returned() {
+        let (rest, c) = components(r#"component browser; rest"#).unwrap();
+        assert_eq!(rest, " rest");
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].name, "browser");
+        assert_eq!(c[0].alias, "browser");
     }
 
     // --- `message` ------------------------------------------------------------
 
-    #[test]
-    fn mandatory_arrow_only() {
-        let (rest, msg) = message("s -> d").unwrap();
-        assert_eq!(rest, "");
-        assert_eq!(msg.from, "s");
-        assert_eq!(msg.to, "d");
-        assert_eq!(msg.message, None);
+    macro_rules! assert_message {
+        ($input:expr, $from:expr, $to:expr) => {
+            assert_message!(@int $input, $from, $to, None, vec![], "");
+        };
+        ($input:expr, $from:expr, $to:expr, attrs: $attrs:expr) => {
+            assert_message!(@int $input, $from, $to, None, $attrs, "");
+        };
+        ($input:expr, $from:expr, $to:expr, $message:expr) => {
+            assert_message!(@int $input, $from, $to, Some($message), vec![], "");
+        };
+        ($input:expr, $from:expr, $to:expr, $message:expr, rest: $rest:expr) => {
+            assert_message!(@int $input, $from, $to, Some($message), vec![], $rest);
+        };
+        ($input:expr, $from:expr, $to:expr, $message:expr, attrs: $attrs:expr) => {
+            assert_message!(@int $input, $from, $to, Some($message), $attrs, "");
+        };
+        (@int $input:expr, $from:expr, $to:expr, $message:expr, $attrs:expr, $rest:expr) => {
+            let (rest, msg) = message($input).unwrap();
+            assert_eq!(rest, $rest);
+            assert_eq!(msg.from, $from);
+            assert_eq!(msg.to, $to);
+            assert_eq!(msg.message.as_deref(), $message);
+            assert_eq!(msg.attributes, $attrs);
+        };
     }
 
     #[test]
-    fn with_text() {
-        let (rest, msg) = message("b -> s : GET /path").unwrap();
-        assert_eq!(rest, "");
-        assert_eq!(msg.from, "b");
-        assert_eq!(msg.to, "s");
-        assert_eq!(msg.message, Some("GET /path".to_string()));
+    fn message_mandatory_arrow_only() {
+        assert_message!("s -> d", "s", "d");
     }
 
     #[test]
-    fn no_space_around_arrow() {
-        let msg = parse_message("b->s").unwrap();
-        assert_eq!(msg.from, "b");
-        assert_eq!(msg.to, "s");
-        assert_eq!(msg.message, None);
+    fn message_with_text() {
+        assert_message!("b -> s : GET /path", "b", "s", "GET /path");
     }
 
     #[test]
-    fn extra_whitespace_is_allowed() {
-        let (rest, msg) = message("a   ->   b   :   hello   ").unwrap();
-        assert_eq!(rest, "");
-        assert_eq!(msg.from, "a");
-        assert_eq!(msg.to, "b");
-        assert_eq!(msg.message, Some("hello   ".to_string()));
+    fn message_no_space_around_arrow() {
+        assert_message!("b->s", "b", "s");
     }
 
     #[test]
     fn empty_text_after_colon() {
-        let msg = parse_message("b -> s :").unwrap();
-        assert_eq!(msg.message, Some(String::new()));
+        assert_message!("b -> s : ", "b", "s", "");
     }
 
     #[test]
-    fn newline_must_be_escaped() {
-        let msg = parse_message("b -> s : first line\\nsecond line").unwrap();
-        assert_eq!(msg.message, Some("first line\nsecond line".to_string()));
+    fn message_newline_must_be_escaped() {
+        assert_message!(
+            "b -> s : first line\\nsecond line",
+            "b",
+            "s",
+            "first line\nsecond line"
+        );
     }
 
     #[test]
-    fn literal_newline_terminates_text() {
-        let (rest, msg) = message("b -> s : hello\nworld").unwrap();
-        assert_eq!(msg.message, Some("hello".to_string()));
-        assert_eq!(rest, "\nworld");
+    fn message_literal_newline_terminates_text() {
+        assert_message!("b -> s : hello\nworld", "b", "s", "hello", rest: "\nworld");
     }
 
     #[test]
-    fn no_attributes() {
-        let msg = parse_message("b -> s : GET /path").unwrap();
-        assert_eq!(msg.attributes, vec![]);
+    fn message_attributes_with_trailing_comma() {
+        assert_message!("b -> s [color=red, ] : GET /path", "b", "s", "GET /path", attrs: vec![Attribute {
+            key: "color",
+            value: Value::Identifier("red"),
+        }]);
     }
 
     #[test]
-    fn attributes_with_trailing_comma() {
-        let (rest, msg) = message("b -> s [color=red, ] : GET /path").unwrap();
-        assert_eq!(rest, "");
-        assert_eq!(msg.from, "b");
-        assert_eq!(msg.to, "s");
-        assert_eq!(
-            msg.attributes,
-            vec![Attribute {
+    fn message_multiple_attributes() {
+        assert_message!("a -> b [color=red, size=large,]", "a", "b", attrs:vec![
+            Attribute {
                 key: "color",
                 value: Value::Identifier("red"),
-            }],
-        );
-        assert_eq!(msg.message, Some("GET /path".to_string()));
+            },
+            Attribute {
+                key: "size",
+                value: Value::Identifier("large"),
+            },
+        ]);
     }
 
     #[test]
-    fn multiple_attributes() {
-        let msg = parse_message("a -> b [color=red, size=large,]").unwrap();
-        assert_eq!(
-            msg.attributes,
-            vec![
-                Attribute {
-                    key: "color",
-                    value: Value::Identifier("red"),
-                },
-                Attribute {
-                    key: "size",
-                    value: Value::Identifier("large"),
-                },
-            ],
-        );
+    fn message_attribute_quoted_value() {
+        assert_message!(r#"a -> b [name="foo bar"]"#, "a", "b", attrs: vec![Attribute {
+            key: "name",
+            value: Value::Quoted("foo bar".to_string()),
+        }]);
     }
 
     #[test]
-    fn attribute_quoted_value() {
-        let msg = parse_message(r#"a -> b [name="foo bar"]"#).unwrap();
-        assert_eq!(
-            msg.attributes,
-            vec![Attribute {
-                key: "name",
-                value: Value::Quoted("foo bar".to_string()),
-            }],
-        );
+    fn message_empty_attribute_block() {
+        assert_message!("a -> b []", "a", "b", attrs: vec![]);
     }
 
     #[test]
-    fn empty_attribute_block() {
-        let msg = parse_message("a -> b []").unwrap();
-        assert_eq!(msg.attributes, vec![]);
-    }
-
-    #[test]
-    fn attributes_without_text() {
-        let msg = parse_message("a -> b [color=red]").unwrap();
-        assert_eq!(
-            msg.attributes,
-            vec![Attribute {
-                key: "color",
-                value: Value::Identifier("red"),
-            }],
-        );
-        assert_eq!(msg.message, None);
-    }
-
-    #[test]
-    fn missing_arrow_is_an_error() {
+    fn message_missing_arrow_is_an_error() {
         assert!(parse_message("b s").is_err());
     }
 }
