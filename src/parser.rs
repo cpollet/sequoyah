@@ -158,22 +158,21 @@ fn component(input: &str) -> IResult<&str, Component<'_>> {
     (
         tag("component"),
         multispace1,
-        quoted_string,
-        multispace0,
-        tag("as"), // todo: this is optional
-        multispace1,
-        identifier,
+        alt((
+            map((quoted_string, multispace0,tag("as"),multispace1,identifier), |(name,_, _,_,alias)| (name, alias)),
+            map(identifier, |ident| (ident.to_string(), ident))
+        )),
         multispace0,
         tag(";"),
     )
         .parse(input)
-        .map(|(rest, (_, _, name, _, _, _, alias, _, _))| {
+        .map(|(rest, (_tag, _, (name, alias), _, _))| {
             (
                 rest,
                 Component {
                     kind: ComponentKind::Component,
                     name,
-                    alias: Some(alias),
+                    alias,
                 },
             )
         })
@@ -252,10 +251,10 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
 pub struct Component<'input> {
     kind: ComponentKind,
     name: String,
-    alias: Option<&'input str>,
+    alias: &'input str,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum ComponentKind {
     Component,
 }
@@ -284,7 +283,123 @@ pub enum Value<'input> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Attribute, Value, message, parse_message};
+    use super::{
+        Attribute, ComponentKind, Value, component, message, parse_component, parse_message,
+    };
+
+    fn assert_component(input: &str, name: &str, alias: &str) {
+        let (rest, c) = component(input).expect("expected a component to parse");
+        assert_eq!(rest, "", "unexpected trailing input");
+        assert_eq!(c.kind, ComponentKind::Component);
+        assert_eq!(c.name, name);
+        assert_eq!(c.alias, alias);
+    }
+
+    // --- `component` ----------------------------------------------------------
+
+    #[test]
+    fn quoted_name_with_alias() {
+        assert_component("component \"browser\" as b;", "browser", "b");
+    }
+
+    #[test]
+    fn identifier_name_uses_same_alias() {
+        assert_component("component browser;", "browser", "browser");
+    }
+
+    #[test]
+    fn identifier_name_with_mixed_case() {
+        assert_component("component MyComponent;", "MyComponent", "MyComponent");
+    }
+
+    #[test]
+    fn quoted_name_with_internal_spaces() {
+        assert_component(r#"component "my component" as myComp;"#, "my component", "myComp");
+    }
+
+    #[test]
+    fn empty_quoted_name() {
+        assert_component(r#"component "" as x;"#, "", "x");
+    }
+
+    #[test]
+    fn quoted_name_with_escaped_chars() {
+        assert_component(r#"component "a\tb\n" as x;"#, "a\tb\n", "x");
+    }
+
+    #[test]
+    fn no_space_between_quoted_name_and_as() {
+        assert_component(r#"component "browser"as b;"#, "browser", "b");
+    }
+
+    #[test]
+    fn spaces_after_keyword_are_allowed() {
+        assert_component("component    \"browser\" as b;", "browser", "b");
+    }
+
+    #[test]
+    fn spaces_after_as_are_allowed() {
+        assert_component("component \"browser\" as    b;", "browser", "b");
+    }
+
+    #[test]
+    fn trailing_whitespace_before_semicolon() {
+        assert_component("component \"browser\" as b   ;", "browser", "b");
+    }
+
+    #[test]
+    fn trailing_content_is_returned() {
+        let (rest, c) = component("component \"browser\" as b; rest").unwrap();
+        assert_eq!(rest, " rest");
+        assert_eq!(c.name, "browser");
+        assert_eq!(c.alias, "b");
+    }
+
+    #[test]
+    fn parse_component_wrapper() {
+        let c = parse_component("component \"browser\" as b;").unwrap();
+        assert_eq!(c.name, "browser");
+        assert_eq!(c.alias, "b");
+        assert_eq!(c.kind, ComponentKind::Component);
+    }
+
+    #[test]
+    fn space_after_keyword_is_required() {
+        assert!(component("componentbrowser;").is_err());
+    }
+
+    #[test]
+    fn missing_semicolon() {
+        assert!(component("component \"browser\" as b").is_err());
+    }
+
+    #[test]
+    fn missing_name() {
+        assert!(component("component ;").is_err());
+    }
+
+    #[test]
+    fn missing_component_keyword() {
+        assert!(component(r#""browser" as b;"#).is_err());
+    }
+
+    #[test]
+    fn spaces_before_as_are_allowed() {
+        // Whitespace between the closing quote and `as` is tolerated.
+        assert_component(r#"component "browser"  as b;"#, "browser", "b");
+    }
+
+    #[test]
+    fn quoted_name_requires_alias() {
+        assert!(component(r#"component "browser";"#).is_err());
+    }
+
+    #[test]
+    fn missing_alias_after_as() {
+        assert!(component(r#"component "browser" as;"#).is_err());
+    }
+
+    // --- `message` ------------------------------------------------------------
 
     #[test]
     fn mandatory_arrow_only() {
