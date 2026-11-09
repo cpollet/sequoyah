@@ -3,7 +3,7 @@ component "server" as s;
 component "database" as d;
 
 b -> s [color=red, ] : GET /path
-{
-    s -> d : SELECT
-    return [color=red, ] data
-}
+// {
+//     s -> d : SELECT
+//     return [color=red, ] data
+// }

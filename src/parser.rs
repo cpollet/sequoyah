@@ -2,19 +2,18 @@ use crate::parser::string::{quoted_string, unquoted_string};
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alpha1, alphanumeric0, multispace1, not_line_ending};
-use nom::combinator::value as val;
+use nom::combinator::{all_consuming, value as val};
 use nom::combinator::{eof, map, opt, recognize};
 use nom::error::{Error, ParseError};
 use nom::multi::{many0, many0_count};
 use nom::sequence::{delimited, pair, preceded};
 use nom::{Finish, IResult, Parser};
 
-pub fn parse_components(input: &str) -> Result<Vec<Component<'_>>, Error<&str>> {
-    components(input).finish().map(|(_, c)| c)
-}
-
-pub fn parse_message(input: &str) -> Result<Message<'_>, Error<&str>> {
-    message(input).finish().map(|(_, m)| m)
+pub fn parse(input: &str) -> Result<Graph<'_>, Error<&str>> {
+    all_consuming((graph, whitespace0))
+        .parse(input)
+        .finish()
+        .map(|(_, (g, _))| g)
 }
 
 mod string {
@@ -164,13 +163,13 @@ fn comment(input: &str) -> IResult<&str, ()> {
     unit(pair(tag("//"), not_line_ending)).parse(input)
 }
 
-/// Consume any amount of comments and whitespace characters
+/// Consume any amount of comments and whitespace characters.
 fn whitespace0(input: &str) -> IResult<&str, ()> {
     unit(many0_count(alt((unit(multispace1), comment)))).parse(input)
 }
 
 /// Consume any amount of comments and whitespace characters, but at least one whitespace character
-/// (or eof)
+/// (or eof).
 fn whitespace1(input: &str) -> IResult<&str, ()> {
     unit((
         // skip a comment, if any
@@ -295,6 +294,33 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
         })
 }
 
+fn messages(input: &str) -> IResult<&str, Vec<Message<'_>>> {
+    many0(preceded(whitespace0, message)).parse(input)
+}
+
+fn graph(input: &str) -> IResult<&str, Graph<'_>> {
+    (
+        preceded(whitespace0, components),
+        preceded(whitespace0, messages),
+    )
+        .parse(input)
+        .map(|(rest, (components, messages))| {
+            (rest, {
+                Graph {
+                    components,
+                    messages,
+                }
+            })
+        })
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Graph<'input> {
+    components: Vec<Component<'input>>,
+    messages: Vec<Message<'input>>,
+}
+
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Component<'input> {
@@ -341,7 +367,7 @@ pub enum Value<'input> {
 mod tests {
     use super::{
         Arrow, Attribute, ComponentKind, Value, comment, component, components, message,
-        parse_message, whitespace0, whitespace1,
+        whitespace0, whitespace1,
     };
 
     // --- `comment` ------------------------------------------------------------
@@ -636,6 +662,6 @@ mod tests {
 
     #[test]
     fn message_missing_arrow_is_an_error() {
-        assert!(parse_message("b s").is_err());
+        assert!(message("b s").is_err());
     }
 }
