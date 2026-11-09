@@ -1,10 +1,11 @@
 use crate::parser::string::{quoted_string, unquoted_string};
 use nom::branch::alt;
 use nom::bytes::complete::tag;
-use nom::character::complete::{alpha1, alphanumeric0, multispace0, multispace1};
-use nom::combinator::{map, opt, recognize};
-use nom::error::Error;
-use nom::multi::many0;
+use nom::character::complete::{alpha1, alphanumeric0, multispace1, not_line_ending};
+use nom::combinator::value as val;
+use nom::combinator::{eof, map, opt, recognize};
+use nom::error::{Error, ParseError};
+use nom::multi::{many0, many0_count};
 use nom::sequence::{delimited, pair, preceded};
 use nom::{Finish, IResult, Parser};
 
@@ -150,6 +151,38 @@ mod string {
     }
 }
 
+pub fn unit<I, E: ParseError<I>, F>(parser: F) -> impl Parser<I, Output = (), Error = E>
+where
+    F: Parser<I, Error = E>,
+{
+    val((), parser)
+}
+
+/// Matches a comment, i.e `//` followed by non line ending characters. Does not consume the line
+/// ending character.
+fn comment(input: &str) -> IResult<&str, ()> {
+    unit(pair(tag("//"), not_line_ending)).parse(input)
+}
+
+/// Consume any amount of comments and whitespace characters
+fn whitespace0(input: &str) -> IResult<&str, ()> {
+    unit(many0_count(alt((unit(multispace1), comment)))).parse(input)
+}
+
+/// Consume any amount of comments and whitespace characters, but at least one whitespace character
+/// (or eof)
+fn whitespace1(input: &str) -> IResult<&str, ()> {
+    unit((
+        // skip a comment, if any
+        opt(comment),
+        // we either want a whitespace or an eof
+        unit(alt((multispace1, eof))),
+        // we consume any amount of whitespaces / comments that may remain
+        whitespace0,
+    ))
+    .parse(input)
+}
+
 fn identifier(input: &str) -> IResult<&str, &str> {
     recognize(pair(alpha1, alphanumeric0)).parse(input)
 }
@@ -160,24 +193,24 @@ fn component(input: &str) -> IResult<&str, Component<'_>> {
         alt((
             map(
                 (
-                    multispace0,
+                    whitespace0,
                     quoted_string,
-                    multispace0,
+                    whitespace0,
                     tag("as"),
-                    multispace1,
+                    whitespace1,
                     identifier,
                 ),
                 |(_, name, _, _, _, alias)| (name, alias),
             ),
-            map((multispace1, identifier), |(_, ident)| {
+            map((whitespace1, identifier), |(_, ident)| {
                 (ident.to_string(), ident)
             }),
         )),
-        multispace0,
+        whitespace0,
         tag(";"),
     )
         .parse(input)
-        .map(|(rest, (_tag, (name, alias), _, _))| {
+        .map(|(rest, (_tag, (name, alias), ..))| {
             (
                 rest,
                 Component {
@@ -203,17 +236,17 @@ fn value(input: &str) -> IResult<&str, Value<'_>> {
 /// Whitespace is tolerated around the `=` and around the trailing comma.
 fn attribute(input: &str) -> IResult<&str, Attribute<'_>> {
     delimited(
-        multispace0,
+        whitespace0,
         (
             identifier,
-            multispace0,
+            whitespace0,
             tag("="),
-            multispace0,
+            whitespace0,
             value,
-            multispace0,
+            whitespace0,
             opt(tag(",")),
         ),
-        multispace0,
+        whitespace0,
     )
     .parse(input)
     .map(|(rest, (key, _, _, _, value, _, _))| (rest, Attribute { key, value }))
@@ -226,7 +259,7 @@ fn attributes(input: &str) -> IResult<&str, Vec<Attribute<'_>>> {
 }
 
 fn components(input: &str) -> IResult<&str, Vec<Component<'_>>> {
-    many0(preceded(multispace0, component)).parse(input)
+    many0(preceded(whitespace0, component)).parse(input)
 }
 
 /// Parse a message of the form `a -> b` optionally followed by `[ ... ]` attribute block
@@ -237,14 +270,14 @@ fn components(input: &str) -> IResult<&str, Vec<Component<'_>>> {
 fn message(input: &str) -> IResult<&str, Message<'_>> {
     (
         identifier,
-        multispace0,
+        whitespace0,
         tag("->"),
-        multispace0,
+        whitespace0,
         identifier,
-        opt(preceded(multispace0, attributes)),
+        opt(preceded(whitespace0, attributes)),
         opt(preceded(
-            multispace0,
-            preceded(tag(":"), preceded(multispace0, unquoted_string)),
+            whitespace0,
+            preceded(tag(":"), preceded(whitespace0, unquoted_string)),
         )),
     )
         .parse(input)
@@ -298,7 +331,93 @@ pub enum Value<'input> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Attribute, ComponentKind, Value, component, components, message, parse_message};
+    use super::{
+        Attribute, ComponentKind, Value, comment, component, components, message, parse_message,
+        whitespace0, whitespace1,
+    };
+
+    // --- `comment` ------------------------------------------------------------
+
+    #[test]
+    fn comment_single_line_no_newline() {
+        let (rest, _) = comment("//comment").unwrap();
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn comment_single_line_newline() {
+        let (rest, _) = comment("//comment\n").unwrap();
+        assert_eq!(rest, "\n");
+    }
+
+    #[test]
+    fn comment_single_line_newline_and_rest() {
+        let (rest, _) = comment("//comment\nrest").unwrap();
+        assert_eq!(rest, "\nrest");
+    }
+
+    // --- `whitespace0` --------------------------------------------------------
+
+    #[test]
+    fn whitespace0_only_whitespaces() {
+        let (rest, _) = whitespace0(" \n\trest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    #[test]
+    fn whitespace0_whitespaces_then_comment() {
+        let (rest, _) = whitespace0("\n\t // comment \nrest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    #[test]
+    fn whitespace0_comment() {
+        let (rest, _) = whitespace0("// comment\nrest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    #[test]
+    fn whitespace0_comment_no_rest() {
+        let (rest, _) = whitespace0("// comment").unwrap();
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn whitespace0_non_whitespaces() {
+        let (rest, _) = whitespace0("rest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    // --- `whitespace1` --------------------------------------------------------
+
+    #[test]
+    fn whitespace1_only_whitespaces() {
+        let (rest, _) = whitespace1(" \n\trest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    #[test]
+    fn whitespace1_whitespaces_then_comment() {
+        let (rest, _) = whitespace1("\n\t // comment \nrest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    #[test]
+    fn whitespace1_comment() {
+        let (rest, _) = whitespace1("// comment\nrest").unwrap();
+        assert_eq!(rest, "rest");
+    }
+
+    #[test]
+    fn whitespace1_comment_no_rest() {
+        let (rest, _) = whitespace1("// comment").unwrap();
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn whitespace1_non_whitespaces() {
+        assert!(whitespace1("rest").is_err());
+    }
 
     // --- `component` ----------------------------------------------------------
 
