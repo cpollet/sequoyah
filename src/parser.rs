@@ -271,7 +271,7 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
     (
         identifier,
         whitespace0,
-        tag("->"),
+        alt((val(Arrow::Solid, tag("->")), val(Arrow::Dash, tag("-->")))),
         whitespace0,
         identifier,
         opt(preceded(whitespace0, attributes)),
@@ -281,11 +281,12 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
         )),
     )
         .parse(input)
-        .map(|(rest, (from, _, _, _, to, attributes, message))| {
+        .map(|(rest, (from, _, arrow, _, to, attributes, message))| {
             (
                 rest,
                 Message {
                     from,
+                    arrow,
                     to,
                     attributes: attributes.unwrap_or_default(),
                     message,
@@ -311,9 +312,16 @@ enum ComponentKind {
 #[derive(Debug)]
 pub struct Message<'input> {
     from: &'input str,
+    arrow: Arrow,
     to: &'input str,
     attributes: Vec<Attribute<'input>>,
     message: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+enum Arrow {
+    Solid,
+    Dash,
 }
 
 #[allow(unused)]
@@ -332,8 +340,8 @@ pub enum Value<'input> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Attribute, ComponentKind, Value, comment, component, components, message, parse_message,
-        whitespace0, whitespace1,
+        Arrow, Attribute, ComponentKind, Value, comment, component, components, message,
+        parse_message, whitespace0, whitespace1,
     };
 
     // --- `comment` ------------------------------------------------------------
@@ -524,25 +532,26 @@ mod tests {
     // --- `message` ------------------------------------------------------------
 
     macro_rules! assert_message {
-        ($input:expr, $from:expr, $to:expr) => {
-            assert_message!(@int $input, $from, $to, None, vec![], "");
+        ($input:expr, $from:expr, $arrow:expr, $to:expr) => {
+            assert_message!(@int $input, $from, $arrow, $to, None, vec![], "");
         };
-        ($input:expr, $from:expr, $to:expr, attrs: $attrs:expr) => {
-            assert_message!(@int $input, $from, $to, None, $attrs, "");
+        ($input:expr, $from:expr, $arrow:expr, $to:expr, attrs: $attrs:expr) => {
+            assert_message!(@int $input, $from, $arrow, $to, None, $attrs, "");
         };
-        ($input:expr, $from:expr, $to:expr, $message:expr) => {
-            assert_message!(@int $input, $from, $to, Some($message), vec![], "");
+        ($input:expr, $from:expr, $arrow:expr, $to:expr, $message:expr) => {
+            assert_message!(@int $input, $from, $arrow, $to, Some($message), vec![], "");
         };
-        ($input:expr, $from:expr, $to:expr, $message:expr, rest: $rest:expr) => {
-            assert_message!(@int $input, $from, $to, Some($message), vec![], $rest);
+        ($input:expr, $from:expr, $arrow:expr, $to:expr, $message:expr, rest: $rest:expr) => {
+            assert_message!(@int $input, $from, $arrow, $to, Some($message), vec![], $rest);
         };
-        ($input:expr, $from:expr, $to:expr, $message:expr, attrs: $attrs:expr) => {
-            assert_message!(@int $input, $from, $to, Some($message), $attrs, "");
+        ($input:expr, $from:expr, $arrow:expr, $to:expr, $message:expr, attrs: $attrs:expr) => {
+            assert_message!(@int $input, $from, $arrow, $to, Some($message), $attrs, "");
         };
-        (@int $input:expr, $from:expr, $to:expr, $message:expr, $attrs:expr, $rest:expr) => {
+        (@int $input:expr, $from:expr, $arrow:expr, $to:expr, $message:expr, $attrs:expr, $rest:expr) => {
             let (rest, msg) = message($input).unwrap();
             assert_eq!(rest, $rest);
             assert_eq!(msg.from, $from);
+            assert_eq!(msg.arrow, $arrow);
             assert_eq!(msg.to, $to);
             assert_eq!(msg.message.as_deref(), $message);
             assert_eq!(msg.attributes, $attrs);
@@ -551,22 +560,27 @@ mod tests {
 
     #[test]
     fn message_mandatory_arrow_only() {
-        assert_message!("s -> d", "s", "d");
+        assert_message!("s -> d", "s", Arrow::Solid, "d");
+    }
+
+    #[test]
+    fn message_dashed_arrow() {
+        assert_message!("s --> d", "s", Arrow::Dash, "d");
     }
 
     #[test]
     fn message_with_text() {
-        assert_message!("b -> s : GET /path", "b", "s", "GET /path");
+        assert_message!("b -> s : GET /path", "b", Arrow::Solid, "s", "GET /path");
     }
 
     #[test]
     fn message_no_space_around_arrow() {
-        assert_message!("b->s", "b", "s");
+        assert_message!("b->s", "b", Arrow::Solid, "s");
     }
 
     #[test]
     fn empty_text_after_colon() {
-        assert_message!("b -> s : ", "b", "s", "");
+        assert_message!("b -> s : ", "b", Arrow::Solid, "s", "");
     }
 
     #[test]
@@ -574,6 +588,7 @@ mod tests {
         assert_message!(
             "b -> s : first line\\nsecond line",
             "b",
+            Arrow::Solid,
             "s",
             "first line\nsecond line"
         );
@@ -581,12 +596,12 @@ mod tests {
 
     #[test]
     fn message_literal_newline_terminates_text() {
-        assert_message!("b -> s : hello\nworld", "b", "s", "hello", rest: "\nworld");
+        assert_message!("b -> s : hello\nworld", "b", Arrow::Solid, "s", "hello", rest: "\nworld");
     }
 
     #[test]
     fn message_attributes_with_trailing_comma() {
-        assert_message!("b -> s [color=red, ] : GET /path", "b", "s", "GET /path", attrs: vec![Attribute {
+        assert_message!("b -> s [color=red, ] : GET /path", "b", Arrow::Solid, "s", "GET /path", attrs: vec![Attribute {
             key: "color",
             value: Value::Identifier("red"),
         }]);
@@ -594,7 +609,7 @@ mod tests {
 
     #[test]
     fn message_multiple_attributes() {
-        assert_message!("a -> b [color=red, size=large,]", "a", "b", attrs:vec![
+        assert_message!("a -> b [color=red, size=large,]", "a", Arrow::Solid, "b", attrs:vec![
             Attribute {
                 key: "color",
                 value: Value::Identifier("red"),
@@ -608,7 +623,7 @@ mod tests {
 
     #[test]
     fn message_attribute_quoted_value() {
-        assert_message!(r#"a -> b [name="foo bar"]"#, "a", "b", attrs: vec![Attribute {
+        assert_message!(r#"a -> b [name="foo bar"]"#, "a", Arrow::Solid, "b", attrs: vec![Attribute {
             key: "name",
             value: Value::Quoted("foo bar".to_string()),
         }]);
@@ -616,7 +631,7 @@ mod tests {
 
     #[test]
     fn message_empty_attribute_block() {
-        assert_message!("a -> b []", "a", "b", attrs: vec![]);
+        assert_message!("a -> b []", "a", Arrow::Solid, "b", attrs: vec![]);
     }
 
     #[test]
