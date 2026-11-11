@@ -317,35 +317,35 @@ fn graph(input: &str) -> IResult<&str, Graph<'_>> {
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Graph<'input> {
-    components: Vec<Component<'input>>,
-    messages: Vec<Message<'input>>,
+    pub components: Vec<Component<'input>>,
+    pub messages: Vec<Message<'input>>,
 }
 
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Component<'input> {
-    kind: ComponentKind,
-    name: String,
-    alias: &'input str,
+    pub kind: ComponentKind,
+    pub name: String,
+    pub alias: &'input str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum ComponentKind {
+pub enum ComponentKind {
     Component,
 }
 
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Message<'input> {
-    from: &'input str,
-    arrow: Arrow,
-    to: &'input str,
-    attributes: Vec<Attribute<'input>>,
-    message: Option<String>,
+    pub from: &'input str,
+    pub arrow: Arrow,
+    pub to: &'input str,
+    pub attributes: Vec<Attribute<'input>>,
+    pub message: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum Arrow {
+pub enum Arrow {
     Solid,
     Dash,
 }
