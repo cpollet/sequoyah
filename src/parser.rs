@@ -275,6 +275,7 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
         ws(identifier),
         opt(attributes),
         opt(preceded(sym(":"), unquoted_string)),
+        opt(activation),
     )
         .parse(input)
         .map(
@@ -292,6 +293,29 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
                 )
             },
         )
+}
+
+fn activation(input: &str) -> IResult<&str, Activation<'_>> {
+    (sym("{"), messages, opt(ret_val), sym("}"))
+        .parse(input)
+        .map(|(rest, (_, messages, ret_val, _))| {
+            (
+                rest,
+                Activation {
+                    messages,
+                    ret_val: ret_val.map(|rv| rv.1),
+                },
+            )
+        })
+}
+
+fn ret_val(input: &str) -> IResult<&str, (Vec<Attribute<'_>>, String)> {
+    preceded(
+        delimited(whitespace1, tag("return"), whitespace1),
+        (opt(attributes), unquoted_string),
+    )
+    .parse(input)
+    .map(|(rest, (attributes, ret_val))| (rest, (attributes.unwrap_or_default(), ret_val)))
 }
 
 fn messages(input: &str) -> IResult<&str, Vec<Message<'_>>> {
@@ -339,6 +363,7 @@ pub struct Message<'input> {
     pub to: &'input str,
     pub attributes: Vec<Attribute<'input>>,
     pub message: Option<String>,
+    pub activation: Option<Activation<'input>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

@@ -59,12 +59,32 @@ pub mod plantuml {
             }
 
             self.output += "\n";
+
+            if let Some(activation) = message.activation.as_ref() {
+                self.output += "activate ";
+                self.output += message.to;
+                self.output += "\n";
+
+                for message in activation.messages.iter() {
+                    self.emit_message(message);
+                }
+
+                match activation.ret_val.as_ref() {
+                    Some(ret_val) => {
+                        self.output += "return ";
+                        self.output += ret_val;
+                    }
+                    None => self.output += "deactivate",
+                }
+
+                self.output += "\n";
+            }
         }
 
         fn emit_arrow(&mut self, arrow: &Arrow) {
             self.output += match arrow {
-                Arrow::Solid => "->",
-                Arrow::Dash => "-->",
+                Arrow::Solid => " -> ",
+                Arrow::Dash => " --> ",
             };
         }
     }
@@ -76,6 +96,7 @@ pub mod plantuml {
             for component in graph.components.iter() {
                 self.emit_component(component);
             }
+            self.output += "\n";
 
             for message in graph.messages.iter() {
                 self.emit_message(message);
