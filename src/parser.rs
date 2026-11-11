@@ -150,8 +150,9 @@ mod string {
     }
 }
 
-pub fn unit<I, E: ParseError<I>, F>(parser: F) -> impl Parser<I, Output = (), Error = E>
+pub fn unit<I, E, F>(parser: F) -> impl Parser<I, Output = (), Error = E>
 where
+    E: ParseError<I>,
     F: Parser<I, Error = E>,
 {
     val((), parser)
@@ -159,13 +160,34 @@ where
 
 /// Matches a comment, i.e `//` followed by non line ending characters. Does not consume the line
 /// ending character.
-fn comment(input: &str) -> IResult<&str, ()> {
+fn comment<'a, E>(input: &'a str) -> IResult<&'a str, (), E>
+where
+    E: ParseError<&'a str>,
+{
     unit(pair(tag("//"), not_line_ending)).parse(input)
 }
 
 /// Consume any amount of comments and whitespace characters.
-fn whitespace0(input: &str) -> IResult<&str, ()> {
+fn whitespace0<'a, E>(input: &'a str) -> IResult<&'a str, (), E>
+where
+    E: ParseError<&'a str>,
+{
     unit(many0_count(alt((unit(multispace1), comment)))).parse(input)
+}
+
+fn ws<'a, O, E, F>(inner: F) -> impl Parser<&'a str, Output = O, Error = E>
+where
+    E: ParseError<&'a str>,
+    F: Parser<&'a str, Output = O, Error = E>,
+{
+    delimited(whitespace0, inner, whitespace0)
+}
+
+fn sym<'a, E>(s: &'a str) -> impl Parser<&'a str, Output = &'a str, Error = E>
+where
+    E: ParseError<&'a str>,
+{
+    ws(tag(s))
 }
 
 /// Consume any amount of comments and whitespace characters, but at least one whitespace character
@@ -191,22 +213,14 @@ fn component(input: &str) -> IResult<&str, Component<'_>> {
         tag("component"),
         alt((
             map(
-                (
-                    whitespace0,
-                    quoted_string,
-                    whitespace0,
-                    tag("as"),
-                    whitespace1,
-                    identifier,
-                ),
-                |(_, name, _, _, _, alias)| (name, alias),
+                (ws(quoted_string), tag("as"), whitespace1, identifier),
+                |(name, _, _, alias)| (name, alias),
             ),
             map((whitespace1, identifier), |(_, ident)| {
                 (ident.to_string(), ident)
             }),
         )),
-        whitespace0,
-        tag(";"),
+        sym(";"),
     )
         .parse(input)
         .map(|(rest, (_tag, (name, alias), ..))| {
@@ -234,31 +248,19 @@ fn value(input: &str) -> IResult<&str, Value<'_>> {
 ///
 /// Whitespace is tolerated around the `=` and around the trailing comma.
 fn attribute(input: &str) -> IResult<&str, Attribute<'_>> {
-    delimited(
-        whitespace0,
-        (
-            identifier,
-            whitespace0,
-            tag("="),
-            whitespace0,
-            value,
-            whitespace0,
-            opt(tag(",")),
-        ),
-        whitespace0,
-    )
-    .parse(input)
-    .map(|(rest, (key, _, _, _, value, _, _))| (rest, Attribute { key, value }))
+    (ws(identifier), sym("="), ws(value), opt(sym(",")))
+        .parse(input)
+        .map(|(rest, (key, _, value, _))| (rest, Attribute { key, value }))
 }
 
 /// Parse a `[ ... ]` attribute block: comma-separated `key = value` pairs with an
 /// optional trailing comma.
 fn attributes(input: &str) -> IResult<&str, Vec<Attribute<'_>>> {
-    delimited(tag("["), many0(attribute), tag("]")).parse(input)
+    delimited(sym("["), many0(attribute), sym("]")).parse(input)
 }
 
 fn components(input: &str) -> IResult<&str, Vec<Component<'_>>> {
-    many0(preceded(whitespace0, component)).parse(input)
+    many0(ws(component)).parse(input)
 }
 
 /// Parse a message of the form `a -> b` optionally followed by `[ ... ]` attribute block
@@ -268,41 +270,36 @@ fn components(input: &str) -> IResult<&str, Vec<Component<'_>>> {
 /// any character except a newline; a newline must be written as the `\n` escape.
 fn message(input: &str) -> IResult<&str, Message<'_>> {
     (
-        identifier,
-        whitespace0,
-        alt((val(Arrow::Solid, tag("->")), val(Arrow::Dash, tag("-->")))),
-        whitespace0,
-        identifier,
-        opt(preceded(whitespace0, attributes)),
-        opt(preceded(
-            whitespace0,
-            preceded(tag(":"), preceded(whitespace0, unquoted_string)),
-        )),
+        ws(identifier),
+        alt((val(Arrow::Solid, sym("->")), val(Arrow::Dash, sym("-->")))),
+        ws(identifier),
+        opt(attributes),
+        opt(preceded(sym(":"), unquoted_string)),
     )
         .parse(input)
-        .map(|(rest, (from, _, arrow, _, to, attributes, message))| {
-            (
-                rest,
-                Message {
-                    from,
-                    arrow,
-                    to,
-                    attributes: attributes.unwrap_or_default(),
-                    message,
-                },
-            )
-        })
+        .map(
+            |(rest, (from, arrow, to, attributes, message, activation))| {
+                (
+                    rest,
+                    Message {
+                        from,
+                        arrow,
+                        to,
+                        attributes: attributes.unwrap_or_default(),
+                        message,
+                        activation,
+                    },
+                )
+            },
+        )
 }
 
 fn messages(input: &str) -> IResult<&str, Vec<Message<'_>>> {
-    many0(preceded(whitespace0, message)).parse(input)
+    many0(message).parse(input)
 }
 
 fn graph(input: &str) -> IResult<&str, Graph<'_>> {
-    (
-        preceded(whitespace0, components),
-        preceded(whitespace0, messages),
-    )
+    (components, messages)
         .parse(input)
         .map(|(rest, (components, messages))| {
             (rest, {
@@ -363,30 +360,38 @@ pub enum Value<'input> {
     Quoted(String),
 }
 
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Activation<'input> {
+    pub messages: Vec<Message<'input>>,
+    pub ret_val: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         Arrow, Attribute, ComponentKind, Value, comment, component, components, message,
         whitespace0, whitespace1,
     };
+    use nom::error::Error;
 
     // --- `comment` ------------------------------------------------------------
 
     #[test]
     fn comment_single_line_no_newline() {
-        let (rest, _) = comment("//comment").unwrap();
+        let (rest, _) = comment::<Error<&str>>("//comment").unwrap();
         assert_eq!(rest, "");
     }
 
     #[test]
     fn comment_single_line_newline() {
-        let (rest, _) = comment("//comment\n").unwrap();
+        let (rest, _) = comment::<Error<&str>>("//comment\n").unwrap();
         assert_eq!(rest, "\n");
     }
 
     #[test]
     fn comment_single_line_newline_and_rest() {
-        let (rest, _) = comment("//comment\nrest").unwrap();
+        let (rest, _) = comment::<Error<&str>>("//comment\nrest").unwrap();
         assert_eq!(rest, "\nrest");
     }
 
@@ -394,31 +399,31 @@ mod tests {
 
     #[test]
     fn whitespace0_only_whitespaces() {
-        let (rest, _) = whitespace0(" \n\trest").unwrap();
+        let (rest, _) = whitespace0::<Error<&str>>(" \n\trest").unwrap();
         assert_eq!(rest, "rest");
     }
 
     #[test]
     fn whitespace0_whitespaces_then_comment() {
-        let (rest, _) = whitespace0("\n\t // comment \nrest").unwrap();
+        let (rest, _) = whitespace0::<Error<&str>>("\n\t // comment \nrest").unwrap();
         assert_eq!(rest, "rest");
     }
 
     #[test]
     fn whitespace0_comment() {
-        let (rest, _) = whitespace0("// comment\nrest").unwrap();
+        let (rest, _) = whitespace0::<Error<&str>>("// comment\nrest").unwrap();
         assert_eq!(rest, "rest");
     }
 
     #[test]
     fn whitespace0_comment_no_rest() {
-        let (rest, _) = whitespace0("// comment").unwrap();
+        let (rest, _) = whitespace0::<Error<&str>>("// comment").unwrap();
         assert_eq!(rest, "");
     }
 
     #[test]
     fn whitespace0_non_whitespaces() {
-        let (rest, _) = whitespace0("rest").unwrap();
+        let (rest, _) = whitespace0::<Error<&str>>("rest").unwrap();
         assert_eq!(rest, "rest");
     }
 
@@ -500,7 +505,7 @@ mod tests {
 
     #[test]
     fn component_trailing_content_is_returned() {
-        assert_component!("component \"browser\" as b; rest", "browser", "b", " rest");
+        assert_component!("component \"browser\" as b; rest", "browser", "b", "rest");
     }
 
     #[test]
@@ -549,7 +554,7 @@ mod tests {
     #[test]
     fn components_trailing_content_is_returned() {
         let (rest, c) = components(r#"component browser; rest"#).unwrap();
-        assert_eq!(rest, " rest");
+        assert_eq!(rest, "rest");
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].name, "browser");
         assert_eq!(c[0].alias, "browser");
