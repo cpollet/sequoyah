@@ -150,7 +150,7 @@ mod string {
     }
 }
 
-pub fn unit<I, E, F>(parser: F) -> impl Parser<I, Output = (), Error = E>
+pub fn skip<I, E, F>(parser: F) -> impl Parser<I, Output = (), Error = E>
 where
     E: ParseError<I>,
     F: Parser<I, Error = E>,
@@ -164,7 +164,7 @@ fn comment<'a, E>(input: &'a str) -> IResult<&'a str, (), E>
 where
     E: ParseError<&'a str>,
 {
-    unit(pair(tag("//"), not_line_ending)).parse(input)
+    skip(pair(tag("//"), not_line_ending)).parse(input)
 }
 
 /// Consume any amount of comments and whitespace characters.
@@ -172,7 +172,7 @@ fn whitespace0<'a, E>(input: &'a str) -> IResult<&'a str, (), E>
 where
     E: ParseError<&'a str>,
 {
-    unit(many0_count(alt((unit(multispace1), comment)))).parse(input)
+    skip(many0_count(alt((skip(multispace1), comment)))).parse(input)
 }
 
 fn ws<'a, O, E, F>(inner: F) -> impl Parser<&'a str, Output = O, Error = E>
@@ -193,11 +193,11 @@ where
 /// Consume any amount of comments and whitespace characters, but at least one whitespace character
 /// (or eof).
 fn whitespace1(input: &str) -> IResult<&str, ()> {
-    unit((
+    skip((
         // skip a comment, if any
         opt(comment),
         // we either want a whitespace or an eof
-        unit(alt((multispace1, eof))),
+        skip(alt((multispace1, eof))),
         // we consume any amount of whitespaces / comments that may remain
         whitespace0,
     ))
