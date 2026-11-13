@@ -21,7 +21,8 @@ trait Emitter {
 
 pub mod plantuml {
     use crate::emitter::{Emit, Emitter};
-    use crate::parser::{Arrow, Component, Graph, Message};
+    use crate::parser::{Arrow, ArrowBody, ArrowHead, Component, ComponentKind, Graph, Message};
+    use std::fmt::Write;
 
     pub fn emit(graph: &Graph) -> String {
         let mut plant_uml = PlantUml::new();
@@ -41,8 +42,17 @@ pub mod plantuml {
         }
 
         fn emit_component(&mut self, component: &Component) {
-            self.output += "participant ";
-            self.output += &component.name;
+            self.output += match component.kind {
+                ComponentKind::Component => "participant ",
+                ComponentKind::Actor => "actor ",
+                ComponentKind::Boundary => "boundary ",
+                ComponentKind::Control => "control ",
+                ComponentKind::Entity => "entity ",
+                ComponentKind::Database => "database ",
+                ComponentKind::Collections => "collections ",
+                ComponentKind::Queue => "queue ",
+            };
+            self.emit_component_name(&component.name);
             self.output += " as ";
             self.output += component.alias;
             self.output += "\n";
@@ -55,7 +65,7 @@ pub mod plantuml {
 
             if let Some(message) = message.message.as_ref() {
                 self.output += " : ";
-                self.output += message;
+                self.emit_message_text(message);
             }
 
             self.output += "\n";
@@ -69,23 +79,76 @@ pub mod plantuml {
                     self.emit_message(message);
                 }
 
-                match activation.ret_val.as_ref() {
-                    Some(ret_val) => {
-                        self.output += "return ";
-                        self.output += ret_val;
-                    }
-                    None => self.output += "deactivate",
+                if let Some(ret_val) = activation.ret_val.as_ref() {
+                    self.output += message.from;
+                    self.emit_arrow(&Arrow {
+                        left_dot: false,
+                        left_head: ArrowHead::Thick,
+                        body: ArrowBody::Dash,
+                        right_head: ArrowHead::None,
+                        right_dot: false,
+                    });
+                    self.output += message.to;
+                    self.output += " : ";
+                    self.output += ret_val;
+                    self.output += "\n";
                 }
+                self.output += "deactivate";
 
                 self.output += "\n";
             }
         }
 
         fn emit_arrow(&mut self, arrow: &Arrow) {
-            self.output += match arrow {
-                Arrow::Solid => " -> ",
-                Arrow::Dash => " --> ",
+            if arrow.left_dot {
+                self.output += " o";
+            } else {
+                self.output += " ";
+            }
+            self.output += match arrow.left_head {
+                ArrowHead::None => "",
+                ArrowHead::Thick => "<",
+                ArrowHead::Thin => "<<",
+                ArrowHead::Lost => "x",
             };
+            self.output += match arrow.body {
+                ArrowBody::Solid => "-",
+                ArrowBody::Dash => "--",
+            };
+            self.output += match arrow.right_head {
+                ArrowHead::None => "",
+                ArrowHead::Thick => ">",
+                ArrowHead::Thin => ">>",
+                ArrowHead::Lost => "x",
+            };
+            if arrow.right_dot {
+                self.output += "o ";
+            } else {
+                self.output += " ";
+            }
+        }
+
+        fn emit_component_name(&mut self, name: &str) {
+            self.output += "\"";
+            for c in name.chars() {
+                match c {
+                    '\\' => self.output += "\\\\",
+                    '\n' => self.output += "\\n",
+                    c @ '"' => panic!("Unsupported char: {c}"),
+                    c => self.output.write_char(c).expect("Can write to string"),
+                }
+            }
+            self.output += "\"";
+        }
+
+        fn emit_message_text(&mut self, text: &str) {
+            for c in text.chars() {
+                match c {
+                    '\\' => self.output += "\\\\",
+                    '\n' => self.output += "\\n",
+                    c => self.output.write_char(c).expect("Can write to string"),
+                }
+            }
         }
     }
 

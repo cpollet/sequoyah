@@ -210,7 +210,17 @@ fn identifier(input: &str) -> IResult<&str, &str> {
 
 fn component(input: &str) -> IResult<&str, Component<'_>> {
     (
-        tag("component"),
+        alt((
+            val(ComponentKind::Component, tag("participant")),
+            val(ComponentKind::Component, tag("component")),
+            val(ComponentKind::Actor, tag("actor")),
+            val(ComponentKind::Boundary, tag("boundary")),
+            val(ComponentKind::Control, tag("control")),
+            val(ComponentKind::Entity, tag("entity")),
+            val(ComponentKind::Database, tag("database")),
+            val(ComponentKind::Collections, tag("collections")),
+            val(ComponentKind::Queue, tag("queue")),
+        )),
         alt((
             map(
                 (ws(quoted_string), tag("as"), whitespace1, identifier),
@@ -223,16 +233,7 @@ fn component(input: &str) -> IResult<&str, Component<'_>> {
         sym(";"),
     )
         .parse(input)
-        .map(|(rest, (_tag, (name, alias), ..))| {
-            (
-                rest,
-                Component {
-                    kind: ComponentKind::Component,
-                    name,
-                    alias,
-                },
-            )
-        })
+        .map(|(rest, (kind, (name, alias), ..))| (rest, Component { kind, name, alias }))
 }
 
 /// Parse an attribute value: either an identifier or a quoted string.
@@ -271,9 +272,9 @@ fn components(input: &str) -> IResult<&str, Vec<Component<'_>>> {
 fn message(input: &str) -> IResult<&str, Message<'_>> {
     (
         ws(identifier),
-        alt((val(Arrow::Solid, sym("->")), val(Arrow::Dash, sym("-->")))),
+        arrow,
         ws(identifier),
-        opt(attributes),
+        opt(attributes).map(Option::unwrap_or_default),
         opt(preceded(sym(":"), unquoted_string)),
         opt(activation),
     )
@@ -286,13 +287,61 @@ fn message(input: &str) -> IResult<&str, Message<'_>> {
                         from,
                         arrow,
                         to,
-                        attributes: attributes.unwrap_or_default(),
+                        attributes,
                         message,
                         activation,
                     },
                 )
             },
         )
+}
+
+fn arrow(input: &str) -> IResult<&str, Arrow> {
+    fn left(input: &str) -> IResult<&str, ArrowHead> {
+        opt(alt((
+            val(ArrowHead::Thin, tag("<<")),
+            val(ArrowHead::Thick, tag("<")),
+            val(ArrowHead::Lost, tag("x")),
+        )))
+        .parse(input)
+        .map(|(rest, head)| (rest, head.unwrap_or_default()))
+    }
+    fn right(input: &str) -> IResult<&str, ArrowHead> {
+        opt(alt((
+            val(ArrowHead::Thin, tag(">>")),
+            val(ArrowHead::Thick, tag(">")),
+            val(ArrowHead::Lost, tag("x")),
+        )))
+        .parse(input)
+        .map(|(rest, head)| (rest, head.unwrap_or_default()))
+    }
+    fn body(input: &str) -> IResult<&str, ArrowBody> {
+        alt((
+            val(ArrowBody::Dash, tag("--")),
+            val(ArrowBody::Solid, tag("-")),
+        ))
+        .parse(input)
+    }
+    fn dot(input: &str) -> IResult<&str, bool> {
+        opt(alt((tag("o"), tag("*"))))
+            .parse(input)
+            .map(|(rest, body)| (rest, body.is_some()))
+    }
+
+    (dot, left, body, right, dot)
+        .parse(input)
+        .map(|(rest, (ld, l, b, r, rd))| {
+            (
+                rest,
+                Arrow {
+                    left_dot: ld,
+                    left_head: l,
+                    body: b,
+                    right_head: r,
+                    right_dot: rd,
+                },
+            )
+        })
 }
 
 fn activation(input: &str) -> IResult<&str, Activation<'_>> {
@@ -353,6 +402,13 @@ pub struct Component<'input> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentKind {
     Component,
+    Actor,
+    Boundary,
+    Control,
+    Entity,
+    Database,
+    Collections,
+    Queue,
 }
 
 #[allow(unused)]
@@ -367,7 +423,25 @@ pub struct Message<'input> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Arrow {
+pub struct Arrow {
+    pub left_dot: bool,
+    pub left_head: ArrowHead,
+    pub body: ArrowBody,
+    pub right_head: ArrowHead,
+    pub right_dot: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub enum ArrowHead {
+    #[default]
+    None,
+    Thick,
+    Thin,
+    Lost,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ArrowBody {
     Solid,
     Dash,
 }
@@ -395,8 +469,8 @@ pub struct Activation<'input> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Arrow, Attribute, ComponentKind, Value, comment, component, components, message,
-        whitespace0, whitespace1,
+        Arrow, ArrowBody, ArrowHead, Attribute, ComponentKind, Value, comment, component,
+        components, message, whitespace0, whitespace1,
     };
     use insta::assert_debug_snapshot;
     use nom::error::Error;
@@ -617,27 +691,212 @@ mod tests {
 
     #[test]
     fn message_mandatory_arrow_only() {
-        assert_message!("s -> d", "s", Arrow::Solid, "d");
+        assert_message!(
+            "s -> d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: Default::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "d"
+        );
     }
 
     #[test]
     fn message_dashed_arrow() {
-        assert_message!("s --> d", "s", Arrow::Dash, "d");
+        assert_message!(
+            "s --> d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Dash,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_reverse_arrow() {
+        assert_message!(
+            "s <- d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::Thick,
+                body: ArrowBody::Solid,
+                right_head: Default::default(),
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_thin_arrow() {
+        assert_message!(
+            "s ->> d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: Default::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thin,
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_thin_reverse_arrow() {
+        assert_message!(
+            "s <<- d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::Thin,
+                body: ArrowBody::Solid,
+                right_head: Default::default(),
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_lost_arrow() {
+        assert_message!(
+            "s -x d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: Default::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Lost,
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_lost_reverse_arrow() {
+        assert_message!(
+            "s x- d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::Lost,
+                body: ArrowBody::Solid,
+                right_head: Default::default(),
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_dot_arrow() {
+        assert_message!(
+            "s ->o d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: Default::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: true,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_dot_reverse_arrow() {
+        assert_message!(
+            "s o-> d",
+            "s",
+            Arrow {
+                left_dot: true,
+                left_head: Default::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "d"
+        );
+    }
+
+    #[test]
+    fn message_double_arrow() {
+        assert_message!(
+            "s <-> d",
+            "s",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::Thick,
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "d"
+        );
     }
 
     #[test]
     fn message_with_text() {
-        assert_message!("b -> s : GET /path", "b", Arrow::Solid, "s", "GET /path");
+        assert_message!(
+            "b -> s : GET /path",
+            "b",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "s",
+            "GET /path"
+        );
     }
 
     #[test]
     fn message_no_space_around_arrow() {
-        assert_message!("b->s", "b", Arrow::Solid, "s");
+        assert_message!(
+            "b->s",
+            "b",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "s"
+        );
     }
 
     #[test]
     fn empty_text_after_colon() {
-        assert_message!("b -> s : ", "b", Arrow::Solid, "s", "");
+        assert_message!(
+            "b -> s : ",
+            "b",
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
+            "s",
+            ""
+        );
     }
 
     #[test]
@@ -645,7 +904,13 @@ mod tests {
         assert_message!(
             "b -> s : first line\\nsecond line",
             "b",
-            Arrow::Solid,
+            Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            },
             "s",
             "first line\nsecond line"
         );
@@ -653,12 +918,24 @@ mod tests {
 
     #[test]
     fn message_literal_newline_terminates_text() {
-        assert_message!("b -> s : hello\nworld", "b", Arrow::Solid, "s", "hello", rest: "\nworld");
+        assert_message!("b -> s : hello\nworld", "b", Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            }, "s", "hello", rest: "\nworld");
     }
 
     #[test]
     fn message_attributes_with_trailing_comma() {
-        assert_message!("b -> s [color=red, ] : GET /path", "b", Arrow::Solid, "s", "GET /path", attrs: vec![Attribute {
+        assert_message!("b -> s [color=red, ] : GET /path", "b", Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            }, "s", "GET /path", attrs: vec![Attribute {
             key: "color",
             value: Value::Identifier("red"),
         }]);
@@ -666,7 +943,13 @@ mod tests {
 
     #[test]
     fn message_multiple_attributes() {
-        assert_message!("a -> b [color=red, size=large,]", "a", Arrow::Solid, "b", attrs:vec![
+        assert_message!("a -> b [color=red, size=large,]", "a", Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            }, "b", attrs:vec![
             Attribute {
                 key: "color",
                 value: Value::Identifier("red"),
@@ -680,7 +963,13 @@ mod tests {
 
     #[test]
     fn message_attribute_quoted_value() {
-        assert_message!(r#"a -> b [name="foo bar"]"#, "a", Arrow::Solid, "b", attrs: vec![Attribute {
+        assert_message!(r#"a -> b [name="foo bar"]"#, "a", Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            }, "b", attrs: vec![Attribute {
             key: "name",
             value: Value::Quoted("foo bar".to_string()),
         }]);
@@ -688,7 +977,13 @@ mod tests {
 
     #[test]
     fn message_empty_attribute_block() {
-        assert_message!("a -> b []", "a", Arrow::Solid, "b", attrs: vec![]);
+        assert_message!("a -> b []", "a", Arrow {
+                left_dot: false,
+                left_head: ArrowHead::default(),
+                body: ArrowBody::Solid,
+                right_head: ArrowHead::Thick,
+                right_dot: false,
+            }, "b", attrs: vec![]);
     }
 
     #[test]

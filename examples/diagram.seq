@@ -1,9 +1,13 @@
 component "browser" as b;
 component "server" as s;
-component "database" as d;
+database "database" as d;
 
-b -> s [color=red, ] : GET /path
+b -x s [color=red, ] : GET /path "lol"\n2nd line {}
 {
-    s -> d : SELECT
+    s ->o d : SELECT
+    {
+        d->d : ok
+        return ok
+    }
     return [color=red, ] data
 }
