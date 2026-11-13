@@ -311,7 +311,7 @@ fn activation(input: &str) -> IResult<&str, Activation<'_>> {
 
 fn ret_val(input: &str) -> IResult<&str, (Vec<Attribute<'_>>, String)> {
     preceded(
-        delimited(whitespace1, tag("return"), whitespace1),
+        delimited(whitespace0, tag("return"), whitespace1),
         (opt(attributes), unquoted_string),
     )
     .parse(input)
@@ -398,6 +398,7 @@ mod tests {
         Arrow, Attribute, ComponentKind, Value, comment, component, components, message,
         whitespace0, whitespace1,
     };
+    use insta::assert_debug_snapshot;
     use nom::error::Error;
 
     // --- `comment` ------------------------------------------------------------
@@ -693,5 +694,24 @@ mod tests {
     #[test]
     fn message_missing_arrow_is_an_error() {
         assert!(message("b s").is_err());
+    }
+
+    #[test]
+    fn message_with_activation() {
+        assert_debug_snapshot!(
+            message(
+                r#"
+a -> b
+{
+    b -> c
+    {
+        return 1
+    }
+    return 2
+}
+"#
+            )
+            .unwrap()
+        );
     }
 }

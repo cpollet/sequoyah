@@ -1,0 +1,50 @@
+---
+source: src/parser.rs
+expression: "message(r#\"\n            a -> b\n            {\n                b -> c\n                {\n                    return 1\n                }\n                return 2\n            }\n        \"#).unwrap()"
+---
+(
+    "",
+    Message {
+        from: "a",
+        arrow: Arrow {
+            left_dot: false,
+            left_head: None,
+            body: Solid,
+            right_head: Thick,
+            right_dot: false,
+        },
+        to: "b",
+        attributes: [],
+        message: None,
+        activation: Some(
+            Activation {
+                messages: [
+                    Message {
+                        from: "b",
+                        arrow: Arrow {
+                            left_dot: false,
+                            left_head: None,
+                            body: Solid,
+                            right_head: Thick,
+                            right_dot: false,
+                        },
+                        to: "c",
+                        attributes: [],
+                        message: None,
+                        activation: Some(
+                            Activation {
+                                messages: [],
+                                ret_val: Some(
+                                    "1",
+                                ),
+                            },
+                        ),
+                    },
+                ],
+                ret_val: Some(
+                    "2",
+                ),
+            },
+        ),
+    },
+)
