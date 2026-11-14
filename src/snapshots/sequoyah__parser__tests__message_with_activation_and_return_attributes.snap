@@ -1,0 +1,38 @@
+---
+source: src/parser.rs
+expression: "message(r#\"\na -> b\n{\n    return [color=red] 2\n}\n\"#).unwrap()"
+---
+(
+    "",
+    Message {
+        from: "a",
+        arrow: Arrow {
+            left_dot: false,
+            left_head: None,
+            body: Solid,
+            right_head: Thick,
+            right_dot: false,
+        },
+        to: "b",
+        attributes: [],
+        message: None,
+        activation: Some(
+            Activation {
+                messages: [],
+                ret_val: Some(
+                    (
+                        [
+                            Attribute {
+                                key: "color",
+                                value: Identifier(
+                                    "red",
+                                ),
+                            },
+                        ],
+                        "2",
+                    ),
+                ),
+            },
+        ),
+    },
+)

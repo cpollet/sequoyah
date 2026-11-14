@@ -1,6 +1,7 @@
 use crate::parser::string::{quoted_string, unquoted_string};
 use nom::branch::alt;
 use nom::bytes::complete::tag;
+use nom::bytes::take_while_m_n;
 use nom::character::complete::{alpha1, alphanumeric0, multispace1, not_line_ending};
 use nom::combinator::{all_consuming, value as val};
 use nom::combinator::{eof, map, opt, recognize};
@@ -237,10 +238,19 @@ fn component(input: &str) -> IResult<&str, Component<'_>> {
 }
 
 /// Parse an attribute value: either an identifier or a quoted string.
-fn value(input: &str) -> IResult<&str, Value<'_>> {
+fn attribute_value(input: &str) -> IResult<&str, Value<'_>> {
+    fn hex_color(input: &str) -> IResult<&str, &str> {
+        recognize(pair(
+            tag("#"),
+            take_while_m_n(6, 6, |c: char| c.is_ascii_hexdigit()),
+        ))
+        .parse(input)
+    }
+
     alt((
         map(identifier, Value::Identifier),
         map(quoted_string, Value::Quoted),
+        map(hex_color, Value::HexColor),
     ))
     .parse(input)
 }
@@ -249,7 +259,7 @@ fn value(input: &str) -> IResult<&str, Value<'_>> {
 ///
 /// Whitespace is tolerated around the `=` and around the trailing comma.
 fn attribute(input: &str) -> IResult<&str, Attribute<'_>> {
-    (ws(identifier), sym("="), ws(value), opt(sym(",")))
+    (ws(identifier), sym("="), ws(attribute_value), opt(sym(",")))
         .parse(input)
         .map(|(rest, (key, _, value, _))| (rest, Attribute { key, value }))
 }
@@ -347,24 +357,16 @@ fn arrow(input: &str) -> IResult<&str, Arrow> {
 fn activation(input: &str) -> IResult<&str, Activation<'_>> {
     (sym("{"), messages, opt(ret_val), sym("}"))
         .parse(input)
-        .map(|(rest, (_, messages, ret_val, _))| {
-            (
-                rest,
-                Activation {
-                    messages,
-                    ret_val: ret_val.map(|rv| rv.1),
-                },
-            )
-        })
+        .map(|(rest, (_, messages, ret_val, _))| (rest, Activation { messages, ret_val }))
 }
 
 fn ret_val(input: &str) -> IResult<&str, (Vec<Attribute<'_>>, String)> {
     preceded(
         delimited(whitespace0, tag("return"), whitespace1),
-        (opt(attributes), unquoted_string),
+        (opt(attributes), sym(":"), unquoted_string),
     )
     .parse(input)
-    .map(|(rest, (attributes, ret_val))| (rest, (attributes.unwrap_or_default(), ret_val)))
+    .map(|(rest, (attributes, _, ret_val))| (rest, (attributes.unwrap_or_default(), ret_val)))
 }
 
 fn messages(input: &str) -> IResult<&str, Vec<Message<'_>>> {
@@ -431,7 +433,19 @@ pub struct Arrow {
     pub right_dot: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+impl Arrow {
+    pub fn direction(&self) -> ArrowDirection {
+        use ArrowHead::*;
+        match (self.left_head, self.right_head) {
+            (None, None) => ArrowDirection::None,
+            (None, _) => ArrowDirection::Ltr,
+            (_, None) => ArrowDirection::Rtl,
+            (_, _) => ArrowDirection::Bi,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ArrowHead {
     #[default]
     None,
@@ -440,30 +454,60 @@ pub enum ArrowHead {
     Lost,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ArrowBody {
     Solid,
     Dash,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ArrowDirection {
+    Ltr,
+    Rtl,
+    Bi,
+    None,
+}
+
 #[allow(unused)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Attribute<'input> {
-    key: &'input str,
-    value: Value<'input>,
+    pub key: &'input str,
+    pub value: Value<'input>,
+}
+
+impl<'input> From<Attribute<'input>> for (&'input str, Value<'input>) {
+    fn from(value: Attribute<'input>) -> Self {
+        (value.key, value.value)
+    }
+}
+
+impl<'a, 'input> From<&'a Attribute<'input>> for (&'input str, &'a Value<'input>) {
+    fn from(value: &'a Attribute<'input>) -> Self {
+        (value.key, &value.value)
+    }
+}
+
+impl<'input> From<(&'input str, Value<'input>)> for Attribute<'input> {
+    fn from(value: (&'input str, Value<'input>)) -> Self {
+        Attribute {
+            key: value.0,
+            value: value.1,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Value<'input> {
     Identifier(&'input str),
     Quoted(String),
+    HexColor(&'input str),
 }
 
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Activation<'input> {
     pub messages: Vec<Message<'input>>,
-    pub ret_val: Option<String>,
+    pub ret_val: Option<(Vec<Attribute<'input>>, String)>,
 }
 
 #[cfg(test)]
@@ -1000,9 +1044,24 @@ a -> b
 {
     b -> c
     {
-        return 1
+        return : 1
     }
-    return 2
+    return : 2
+}
+"#
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn message_with_activation_and_return_attributes() {
+        assert_debug_snapshot!(
+            message(
+                r#"
+a -> b
+{
+    return [color=red] : 2
 }
 "#
             )

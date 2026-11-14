@@ -21,7 +21,10 @@ trait Emitter {
 
 pub mod plantuml {
     use crate::emitter::{Emit, Emitter};
-    use crate::parser::{Arrow, ArrowBody, ArrowHead, Component, ComponentKind, Graph, Message};
+    use crate::parser::{
+        Arrow, ArrowBody, ArrowDirection, ArrowHead, Attribute, Component, ComponentKind, Graph,
+        Message, Value,
+    };
     use std::fmt::Write;
 
     pub fn emit(graph: &Graph) -> String {
@@ -60,7 +63,7 @@ pub mod plantuml {
 
         fn emit_message(&mut self, message: &Message) {
             self.output += message.from;
-            self.emit_arrow(&message.arrow);
+            self.emit_arrow(&message.arrow, Self::extract_color(&message.attributes));
             self.output += message.to;
 
             if let Some(message) = message.message.as_ref() {
@@ -79,15 +82,18 @@ pub mod plantuml {
                     self.emit_message(message);
                 }
 
-                if let Some(ret_val) = activation.ret_val.as_ref() {
+                if let Some((attributes, ret_val)) = activation.ret_val.as_ref() {
                     self.output += message.from;
-                    self.emit_arrow(&Arrow {
-                        left_dot: false,
-                        left_head: ArrowHead::Thick,
-                        body: ArrowBody::Dash,
-                        right_head: ArrowHead::None,
-                        right_dot: false,
-                    });
+                    self.emit_arrow(
+                        &Arrow {
+                            left_dot: false,
+                            left_head: ArrowHead::Thick,
+                            body: ArrowBody::Dash,
+                            right_head: ArrowHead::None,
+                            right_dot: false,
+                        },
+                        Self::extract_color(attributes),
+                    );
                     self.output += message.to;
                     self.output += " : ";
                     self.output += ret_val;
@@ -99,22 +105,42 @@ pub mod plantuml {
             }
         }
 
-        fn emit_arrow(&mut self, arrow: &Arrow) {
+        fn emit_arrow(&mut self, arrow: &Arrow, color: Option<&str>) {
             if arrow.left_dot {
                 self.output += " o";
             } else {
                 self.output += " ";
             }
+
             self.output += match arrow.left_head {
                 ArrowHead::None => "",
                 ArrowHead::Thick => "<",
                 ArrowHead::Thin => "<<",
                 ArrowHead::Lost => "x",
             };
+
+            if let Some(color) = color
+                && matches!(arrow.direction(), ArrowDirection::Rtl)
+            {
+                self.output += "[";
+                self.output += color;
+                self.output += "]";
+            }
+
             self.output += match arrow.body {
                 ArrowBody::Solid => "-",
                 ArrowBody::Dash => "--",
             };
+
+            if let Some(color) = color
+                && (matches!(arrow.direction(), ArrowDirection::Ltr)
+                    || matches!(arrow.direction(), ArrowDirection::Bi))
+            {
+                self.output += "[";
+                self.output += color;
+                self.output += "]";
+            }
+
             self.output += match arrow.right_head {
                 ArrowHead::None => "",
                 ArrowHead::Thick => ">",
@@ -149,6 +175,18 @@ pub mod plantuml {
                     c => self.output.write_char(c).expect("Can write to string"),
                 }
             }
+        }
+
+        fn extract_color<'a>(attributes: &'a [Attribute]) -> Option<&'a str> {
+            attributes
+                .iter()
+                .find(|a| a.key.eq_ignore_ascii_case("color"))
+                .map(|a| &a.value)
+                .and_then(|v| match v {
+                    Value::Identifier(identifier) => crate::colors::COLORS.get(identifier).copied(),
+                    Value::Quoted(val) => Some(val.as_str()),
+                    Value::HexColor(color) => Some(*color),
+                })
         }
     }
 
