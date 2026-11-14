@@ -1,3 +1,4 @@
+mod ast;
 mod colors;
 mod emitter;
 mod parser;

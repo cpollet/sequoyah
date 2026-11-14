@@ -1,5 +1,4 @@
-use crate::parser::Graph;
-
+use crate::ast::Graph;
 trait Emit {
     fn emit<E>(&self, emitter: E)
     where
@@ -20,11 +19,11 @@ trait Emitter {
 }
 
 pub mod plantuml {
-    use crate::emitter::{Emit, Emitter};
-    use crate::parser::{
+    use crate::ast::{
         Arrow, ArrowBody, ArrowDirection, ArrowHead, Attribute, Component, ComponentKind, Graph,
         Message, Value,
     };
+    use crate::emitter::{Emit, Emitter};
     use std::fmt::Write;
 
     pub fn emit(graph: &Graph) -> String {
