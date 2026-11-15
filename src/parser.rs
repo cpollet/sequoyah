@@ -13,6 +13,7 @@ use nom::error::{Error, ParseError};
 use nom::multi::{many0, many0_count};
 use nom::sequence::{delimited, pair, preceded};
 use nom::{Finish, IResult, Parser};
+use std::borrow::Cow;
 
 pub fn parse(input: &str) -> Result<Graph<'_>, Error<&str>> {
     all_consuming((graph, whitespace0))
@@ -229,10 +230,10 @@ fn component(input: &str) -> IResult<&str, Component<'_>> {
         alt((
             map(
                 (ws(quoted_string), tag("as"), whitespace1, identifier),
-                |(name, _, _, alias)| (name, alias),
+                |(name, _, _, alias)| (Cow::Owned(name), alias),
             ),
             map((whitespace1, identifier), |(_, ident)| {
-                (ident.to_string(), ident)
+                (Cow::Borrowed(ident), ident)
             }),
         )),
         sym(";"),

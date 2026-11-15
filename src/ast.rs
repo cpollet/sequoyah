@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Graph<'input> {
@@ -9,8 +11,8 @@ pub struct Graph<'input> {
 #[derive(Debug)]
 pub struct Component<'input> {
     pub kind: ComponentKind,
-    pub name: String,
-    pub alias: &'input str,
+    pub name: Cow<'input, str>,
+    pub alias: &'input str, // todo: rename to identifier
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
