@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-insta = "1.49.0"
-nom = "8.0.0"
 phf = { version = "0.14.0", features = ["macros"]}
+
+[dev-dependencies]
+insta = "1.49.0"

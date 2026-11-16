@@ -1,0 +1,3 @@
+component "browser" as b;
+component server;
+database "database" as d;
