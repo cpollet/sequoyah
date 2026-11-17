@@ -23,7 +23,7 @@ impl<'input> Lexer<'input> {
 
     fn make_keyword<F>(
         &self,
-        chars: &Chars,
+        mut chars: Chars,
         mut consumed: usize,
         remaining: &str,
         f: F,
@@ -31,7 +31,6 @@ impl<'input> Lexer<'input> {
     where
         F: FnOnce(Span) -> Token<'input>,
     {
-        let mut chars = chars.clone();
         let mut remaining = remaining.chars();
 
         loop {
@@ -72,24 +71,23 @@ impl<'input> Lexer<'input> {
                     // both chars don't match, but input contains an alphanumeric char, we make an
                     // identifier
                     consumed += 1;
-                    return self.make_identifier(&chars, consumed);
+                    return self.make_identifier(chars, consumed);
                 }
                 (Some(_), _) => {
                     // both chars don't match, and input does not contain an alphanumeric char, we
                     // make an identifier
-                    return self.make_identifier(&chars, consumed);
+                    return self.make_identifier(chars, consumed);
                 }
                 (None, Some(_)) => {
                     // we reached the end of input without matching the keyword, we make an
                     // identifier
-                    return self.make_identifier(&chars, consumed);
+                    return self.make_identifier(chars, consumed);
                 }
             }
         }
     }
 
-    fn make_identifier(&self, chars: &Chars, consumed: usize) -> (usize, Token<'input>) {
-        let chars = chars.clone();
+    fn make_identifier(&self, chars: Chars, consumed: usize) -> (usize, Token<'input>) {
         let consumed = consumed + chars.take_while(|c| c.is_ascii_alphanumeric()).count();
         (
             consumed,
@@ -105,9 +103,8 @@ impl<'input> Lexer<'input> {
         )
     }
 
-    fn make_quoted_string(&self, chars: &Chars) -> (usize, Token<'input>) {
+    fn make_quoted_string(&self, mut chars: Chars) -> (usize, Token<'input>) {
         //todo use descape crate?
-        let mut chars = chars.clone();
         let mut consumed = 1; // the initial '"' is already consumed
 
         let mut owned = None;
@@ -226,37 +223,33 @@ impl<'input> Iterator for Lexer<'input> {
         self.line = line;
         self.column = column;
 
-        if self.remaining.is_empty() {
-            return None;
-        }
-
         let mut chars = self.remaining.chars();
 
-        let (consumed, token) = match chars.next().expect("there is at least one char") {
+        let (consumed, token) = match chars.next()? {
             'a' => match chars.next() {
-                Some('s') => self.make_keyword(&chars, 2, "", Token::As),
-                Some('c') => self.make_keyword(&chars, 2, "tor", Token::Actor),
-                Some(_) => self.make_identifier(&chars, 2),
-                None => self.make_identifier(&chars, 1),
+                Some('s') => self.make_keyword(chars, 2, "", Token::As),
+                Some('c') => self.make_keyword(chars, 2, "tor", Token::Actor),
+                Some(_) => self.make_identifier(chars, 2),
+                None => self.make_identifier(chars, 1),
             },
-            'b' => self.make_keyword(&chars, 1, "oundary", Token::Boundary),
+            'b' => self.make_keyword(chars, 1, "oundary", Token::Boundary),
             'c' => match chars.next() {
                 Some('o') => match chars.next() {
                     Some('l') => {
-                        self.make_keyword(&chars, 3, "lections", Token::Collections)
+                        self.make_keyword(chars, 3, "lections", Token::Collections)
                     }
-                    Some('m') => self.make_keyword(&chars, 3, "ponent", Token::Component),
-                    Some('n') => self.make_keyword(&chars, 3, "trol", Token::Control),
-                    Some(_) => self.make_identifier(&chars, 3),
-                    None => self.make_identifier(&chars, 2),
+                    Some('m') => self.make_keyword(chars, 3, "ponent", Token::Component),
+                    Some('n') => self.make_keyword(chars, 3, "trol", Token::Control),
+                    Some(_) => self.make_identifier(chars, 3),
+                    None => self.make_identifier(chars, 2),
                 },
-                Some(_) => self.make_identifier(&chars, 2),
-                None => self.make_identifier(&chars, 1),
+                Some(_) => self.make_identifier(chars, 2),
+                None => self.make_identifier(chars, 1),
             },
-            'd' => self.make_keyword(&chars, 1, "atabase", Token::Database),
-            'e' => self.make_keyword(&chars, 1, "ntity", Token::Entity),
-            'q' => self.make_keyword(&chars, 1, "ueue", Token::Queue),
-            c if c.is_ascii_alphabetic() => self.make_identifier(&chars, 1),
+            'd' => self.make_keyword(chars, 1, "atabase", Token::Database),
+            'e' => self.make_keyword(chars, 1, "ntity", Token::Entity),
+            'q' => self.make_keyword(chars, 1, "ueue", Token::Queue),
+            c if c.is_ascii_alphabetic() => self.make_identifier(chars, 1),
             ';' => (
                 1,
                 Token::Semicolon(Span {
@@ -266,7 +259,7 @@ impl<'input> Iterator for Lexer<'input> {
                     column,
                 }),
             ),
-            '"' => self.make_quoted_string(&chars),
+            '"' => self.make_quoted_string(chars),
             _ => (
                 1,
                 Token::Invalid(
