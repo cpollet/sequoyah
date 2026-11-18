@@ -34,7 +34,7 @@ pub struct Message<'input> {
     pub arrow: Arrow,
     pub to: &'input str,
     pub attributes: Vec<Attribute<'input>>,
-    pub message: Option<String>,
+    pub message: Option<Cow<'input, str>>,
     pub activation: Option<Activation<'input>>,
 }
 
@@ -113,7 +113,7 @@ impl<'input> From<(&'input str, Value<'input>)> for Attribute<'input> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Value<'input> {
     Identifier(&'input str),
-    Quoted(String),
+    Quoted(Cow<'input, str>),
     HexColor(&'input str),
 }
 

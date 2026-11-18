@@ -183,7 +183,7 @@ pub mod plantuml {
                 .map(|a| &a.value)
                 .and_then(|v| match v {
                     Value::Identifier(identifier) => crate::colors::COLORS.get(identifier).copied(),
-                    Value::Quoted(val) => Some(val.as_str()),
+                    Value::Quoted(val) => Some(val.as_ref()),
                     Value::HexColor(color) => Some(*color),
                 })
         }

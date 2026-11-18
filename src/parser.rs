@@ -1,13 +1,12 @@
-use crate::ast::{Component, ComponentKind, Graph};
-use crate::lexer;
-use crate::lexer::Token;
+use crate::ast::{Attribute, Component, ComponentKind, Graph, Message, Value};
+use crate::lexer::{PeekableLexer, Token};
 use std::borrow::Cow;
-use std::iter::Peekable;
 
-type Lexer<'input> = Peekable<lexer::Lexer<'input>>;
+type Lexer<'input> = PeekableLexer<'input>;
 type TResult<T> = Result<T, String>;
 
 pub fn parse(input: &str) -> TResult<Graph<'_>> {
+    #[cfg(debug_assertions)]
     let mut lexer = Token::lexer(input).peekable();
     parse_graph(&mut lexer)
 }
@@ -15,7 +14,7 @@ pub fn parse(input: &str) -> TResult<Graph<'_>> {
 fn parse_graph<'input>(lexer: &mut Lexer<'input>) -> TResult<Graph<'input>> {
     Ok(Graph {
         components: parse_components(lexer)?,
-        messages: vec![],
+        messages: parse_messages(lexer)?,
     })
 }
 
@@ -61,7 +60,7 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Componen
                 Some(Token::As(_)) => (),
                 Some(token) => {
                     return Some(Err(format!(
-                        "Expected 'as', got {token} as {span}",
+                        "Expected 'as', got {token} at {span}",
                         span = token.span()
                     )));
                 }
@@ -97,4 +96,136 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Componen
         name,
         alias: identifier,
     }))
+}
+
+fn parse_messages<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Message<'input>>> {
+    let mut messages = Vec::new();
+    while let Some(message) = parse_message(lexer) {
+        messages.push(message?);
+    }
+    Ok(messages)
+}
+
+fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'input>>> {
+    let from = match parse_identifier(lexer)? {
+        Ok(i) => i,
+        Err(e) => return Some(Err(e)),
+    };
+
+    if !lexer.skip_whitespace() {
+        // todo report span
+        return Some(Err("Expected whitespace".to_string()));
+    }
+
+    let arrow = match lexer.next() {
+        Some(Token::Arrow(_, arrow)) => arrow,
+        Some(token) => {
+            return Some(Err(format!(
+                "Expected arrow, got {token} at {span}",
+                span = token.span()
+            )));
+        }
+        None => return Some(Err("Expected arrow, got end of input".into())),
+    };
+
+    if !lexer.skip_whitespace() {
+        // todo report span
+        return Some(Err("Expected whitespace".to_string()));
+    }
+
+    let to = match parse_identifier(lexer) {
+        Some(Ok(i)) => i,
+        Some(Err(e)) => return Some(Err(e)),
+        None => return Some(Err("Expected identifier, got end of input".into())),
+    };
+
+    let mut attributes = Vec::new();
+    if lexer
+        .next_if(|token| matches!(token, Token::LBracket(_)))
+        .is_some()
+    {
+        let mut can_parse_new_attribute = true;
+        loop {
+            if let Some(token) = lexer.next() {
+                let key = match token {
+                    Token::RBracket(_) => break,
+                    Token::Identifier(_, identifier) if can_parse_new_attribute => identifier,
+                    token => {
+                        if can_parse_new_attribute {
+                            return Some(Err(format!(
+                                "Expected identifier, got {token} at {span}",
+                                span = token.span()
+                            )));
+                        }
+                        return Some(Err(format!(
+                            "Expected Comma, got {token} at {span}",
+                            span = token.span()
+                        )));
+                    }
+                };
+
+                match lexer.next() {
+                    Some(Token::Equal(_)) => (),
+                    Some(token) => {
+                        return Some(Err(format!(
+                            "Expected Equal, got {token} at {span}",
+                            span = token.span()
+                        )));
+                    }
+                    None => return Some(Err("Expected Equal, got end of input".into())),
+                }
+
+                let value = match lexer.next() {
+                    Some(Token::QuotedString(_, string)) => Value::Quoted(string),
+                    Some(Token::HexColor(_, color)) => Value::HexColor(color),
+                    Some(Token::Identifier(_, identifier)) => Value::Identifier(identifier),
+                    Some(token) => {
+                        return Some(Err(format!(
+                            "Expected Color, got {token} at {span}",
+                            span = token.span()
+                        )));
+                    }
+                    None => return Some(Err("Expected Color, got end of input".into())),
+                };
+
+                can_parse_new_attribute = lexer
+                    .next_if(|token| matches!(token, Token::Comma(_)))
+                    .is_some();
+
+                attributes.push(Attribute { key, value });
+            } else {
+                if can_parse_new_attribute {
+                    return Some(Err("Expected identifier, got end of input".to_string()));
+                }
+                return Some(Err("Expected Comma, got end of input".to_string()));
+            }
+        }
+    }
+
+    let message = lexer
+        .next_if(|token| matches!(token, Token::Colon(_)))
+        .map(|_| lexer.unquoted_string())
+        .map(|t| match t {
+            Token::UnquotedString(_, string) => string,
+            _ => unreachable!(),
+        });
+
+    Some(Ok(Message {
+        from,
+        arrow: arrow.clone(),
+        to,
+        attributes,
+        message,
+        activation: None,
+    }))
+}
+
+fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<&'input str>> {
+    Some(match lexer.next()? {
+        Token::Identifier(_, identifier) => Ok(identifier),
+        token => Err(format!(
+            "Expected identifier, got {token} at {span}",
+            span = token.span()
+        )),
+    })
 }
