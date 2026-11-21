@@ -379,6 +379,7 @@ impl<'input> Iterator for Lexer<'input> {
                 _ => self.make_identifier(1),
             },
             'q' => self.make_keyword(1, "ueue", Token::Queue),
+            'r' => self.make_keyword(1, "eturn", Token::Return),
             'x' => match chars.next() {
                 Some('-') => self.make_arrow(),
                 _ => self.make_identifier(1),
@@ -425,6 +426,24 @@ impl<'input> Iterator for Lexer<'input> {
             ']' => (
                 1,
                 Token::RBracket(Span {
+                    start: self.start,
+                    length: 1,
+                    line: self.line,
+                    column: self.column,
+                }),
+            ),
+            '{' => (
+                1,
+                Token::LCurly(Span {
+                    start: self.start,
+                    length: 1,
+                    line: self.line,
+                    column: self.column,
+                }),
+            ),
+            '}' => (
+                1,
+                Token::RCurly(Span {
                     start: self.start,
                     length: 1,
                     line: self.line,
@@ -529,9 +548,12 @@ pub enum Token<'input> {
     Arrow(Span, &'static Arrow),
 
     As(Span),
+    Return(Span),
 
     LBracket(Span),
     RBracket(Span),
+    LCurly(Span),
+    RCurly(Span),
     Equal(Span),
     Comma(Span),
     Colon(Span),
@@ -561,8 +583,11 @@ impl Token<'_> {
             | Token::HexColor(span, _)
             | Token::Arrow(span, _)
             | Token::As(span)
+            | Token::Return(span)
             | Token::LBracket(span)
             | Token::RBracket(span)
+            | Token::LCurly(span)
+            | Token::RCurly(span)
             | Token::Equal(span)
             | Token::Comma(span)
             | Token::Colon(span)
@@ -589,8 +614,11 @@ impl Display for Token<'_> {
             Token::HexColor(_, color) => write!(f, "Color: {color}"),
             Token::Arrow(_, _) => write!(f, "Arrow"),
             Token::As(_) => write!(f, "As"),
+            Token::Return(_) => write!(f, "Return"),
             Token::LBracket(_) => write!(f, "LBracket"),
             Token::RBracket(_) => write!(f, "RBracket"),
+            Token::LCurly(_) => write!(f, "LCurly"),
+            Token::RCurly(_) => write!(f, "RCurly"),
             Token::Equal(_) => write!(f, "Equal"),
             Token::Comma(_) => write!(f, "Comma"),
             Token::Colon(_) => write!(f, "Colon"),
@@ -654,6 +682,20 @@ mod tests {
             Token::As(Span {
                 start: 0,
                 length: 2,
+                line: 0,
+                column: 0
+            }),
+            "^"
+        );
+    }
+
+    #[test]
+    fn keyword_return() {
+        assert_token!(
+            "return^",
+            Token::Return(Span {
+                start: 0,
+                length: 6,
                 line: 0,
                 column: 0
             }),
@@ -997,6 +1039,34 @@ mod tests {
         assert_token!(
             "]^",
             Token::RBracket(Span {
+                start: 0,
+                length: 1,
+                line: 0,
+                column: 0
+            },),
+            "^"
+        );
+    }
+
+    #[test]
+    fn lcurly() {
+        assert_token!(
+            "{^",
+            Token::LCurly(Span {
+                start: 0,
+                length: 1,
+                line: 0,
+                column: 0
+            },),
+            "^"
+        );
+    }
+
+    #[test]
+    fn rcurly() {
+        assert_token!(
+            "}^",
+            Token::RCurly(Span {
                 start: 0,
                 length: 1,
                 line: 0,

@@ -1,4 +1,4 @@
-use crate::ast::{Attribute, Component, ComponentKind, Graph, Message, Value};
+use crate::ast::{Activation, Attribute, Component, ComponentKind, Graph, Message, Value};
 use crate::lexer::{PeekableLexer, Token};
 use std::borrow::Cow;
 
@@ -26,6 +26,7 @@ fn parse_components<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Component<
     Ok(components)
 }
 
+// todo refactor: should be TResult<Option, ..>>
 fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Component<'input>>> {
     let component_kind = match lexer.peek()? {
         Token::Component(_) => ComponentKind::Component,
@@ -104,6 +105,7 @@ fn parse_messages<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Message<'inp
     Ok(messages)
 }
 
+// todo refactor: should be TResult<Option, ..>>
 fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'input>>> {
     let from = match parse_identifier(lexer)? {
         Ok(i) => i,
@@ -137,6 +139,40 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'i
         None => return Some(Err("Expected identifier, got end of input".into())),
     };
 
+    let attributes = match parse_attributes(lexer) {
+        Ok(attributes) => attributes,
+        Err(e) => return Some(Err(e)),
+    };
+
+    let message = parse_message_text(lexer);
+
+    let activation = match parse_activation(lexer) {
+        Ok(activation) => activation,
+        Err(e) => return Some(Err(e)),
+    };
+
+    Some(Ok(Message {
+        from,
+        arrow: arrow.clone(),
+        to,
+        attributes,
+        text: message,
+        activation,
+    }))
+}
+
+// todo refactor: should be TResult<Option, ..>>
+fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<&'input str>> {
+    Some(match lexer.next()? {
+        Token::Identifier(_, identifier) => Ok(identifier),
+        token => Err(format!(
+            "Expected identifier, got {token} at {span}",
+            span = token.span()
+        )),
+    })
+}
+
+fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Attribute<'input>>> {
     let mut attributes = Vec::new();
     if lexer
         .next_if(|token| matches!(token, Token::LBracket(_)))
@@ -150,27 +186,27 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'i
                     Token::Identifier(_, identifier) if can_parse_new_attribute => identifier,
                     token => {
                         if can_parse_new_attribute {
-                            return Some(Err(format!(
+                            return Err(format!(
                                 "Expected identifier, got {token} at {span}",
                                 span = token.span()
-                            )));
+                            ));
                         }
-                        return Some(Err(format!(
+                        return Err(format!(
                             "Expected Comma, got {token} at {span}",
                             span = token.span()
-                        )));
+                        ));
                     }
                 };
 
                 match lexer.next() {
                     Some(Token::Equal(_)) => (),
                     Some(token) => {
-                        return Some(Err(format!(
+                        return Err(format!(
                             "Expected Equal, got {token} at {span}",
                             span = token.span()
-                        )));
+                        ));
                     }
-                    None => return Some(Err("Expected Equal, got end of input".into())),
+                    None => return Err("Expected Equal, got end of input".into()),
                 }
 
                 let value = match lexer.next() {
@@ -178,12 +214,12 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'i
                     Some(Token::HexColor(_, color)) => Value::HexColor(color),
                     Some(Token::Identifier(_, identifier)) => Value::Identifier(identifier),
                     Some(token) => {
-                        return Some(Err(format!(
+                        return Err(format!(
                             "Expected Color, got {token} at {span}",
                             span = token.span()
-                        )));
+                        ));
                     }
-                    None => return Some(Err("Expected Color, got end of input".into())),
+                    None => return Err("Expected Color, got end of input".into()),
                 };
 
                 can_parse_new_attribute = lexer
@@ -193,37 +229,72 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'i
                 attributes.push(Attribute { key, value });
             } else {
                 if can_parse_new_attribute {
-                    return Some(Err("Expected identifier, got end of input".to_string()));
+                    return Err("Expected identifier, got end of input".to_string());
                 }
-                return Some(Err("Expected Comma, got end of input".to_string()));
+                return Err("Expected Comma, got end of input".to_string());
             }
         }
     }
+    Ok(attributes)
+}
 
-    let message = lexer
+fn parse_message_text<'input>(lexer: &mut Lexer<'input>) -> Option<Cow<'input, str>> {
+    lexer
         .next_if(|token| matches!(token, Token::Colon(_)))
         .map(|_| lexer.unquoted_string())
         .map(|t| match t {
             Token::UnquotedString(_, string) => string,
             _ => unreachable!(),
-        });
-
-    Some(Ok(Message {
-        from,
-        arrow: arrow.clone(),
-        to,
-        attributes,
-        text: message,
-        activation: None,
-    }))
+        })
 }
 
-fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<&'input str>> {
-    Some(match lexer.next()? {
-        Token::Identifier(_, identifier) => Ok(identifier),
-        token => Err(format!(
-            "Expected identifier, got {token} at {span}",
-            span = token.span()
-        )),
-    })
+fn parse_activation<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Activation<'input>>> {
+    if lexer
+        .next_if(|token| matches!(token, Token::LCurly(_)))
+        .is_some()
+    {
+        let mut messages = Vec::new();
+        let ret_val = loop {
+            if lexer
+                .next_if(|token| matches!(token, Token::RCurly(_)))
+                .is_some()
+            {
+                break None;
+            }
+            if lexer
+                .next_if(|token| matches!(token, Token::Return(_)))
+                .is_some()
+            {
+                let attributes = parse_attributes(lexer)?;
+
+                let text = parse_message_text(lexer);
+
+                match lexer.next() {
+                    Some(Token::RCurly(_)) => break text.map(|t| (attributes, t)),
+                    Some(token) => {
+                        // todo: add RBracket and Colon of not seen before ...
+                        return Err(format!(
+                            "Expected RCurly, got {token} at {span}",
+                            span = token.span()
+                        ));
+                    }
+                    // todo: add RBracket and Colon of not seen before ...
+                    None => return Err("Expected RCurly, got end of input".into()),
+                }
+            }
+            match parse_message(lexer) {
+                Some(Err(e)) => return Err(e),
+                Some(Ok(message)) => messages.push(message),
+                None => {
+                    return Err(
+                        "Expected RCurly, Return or identifier, got end of input".to_string()
+                    );
+                }
+            }
+        };
+
+        Ok(Some(Activation { messages, ret_val }))
+    } else {
+        Ok(None)
+    }
 }

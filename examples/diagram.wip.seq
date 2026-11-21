@@ -2,6 +2,9 @@ component "browser" as b;
 component server;
 database "database" as d;
 b --> server:text
-server -> d [color=#ff0000]
+server -> d [color=#ff0000] : text
 server -> d [color=blue]
-server -> d [color="#00ff00", other=x]
+server -> d [color="#00ff00", other=x] {
+    a -> b [color=cyan]: lol
+    return [color=yellow] : ok
+}

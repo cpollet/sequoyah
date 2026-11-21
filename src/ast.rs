@@ -121,5 +121,6 @@ pub enum Value<'input> {
 #[derive(Debug)]
 pub struct Activation<'input> {
     pub messages: Vec<Message<'input>>,
-    pub ret_val: Option<(Vec<Attribute<'input>>, String)>,
+    // todo is the message really mandatory? can't we have an arrow with no messages (but a color)?
+    pub ret_val: Option<(Vec<Attribute<'input>>, Cow<'input, str>)>,
 }
