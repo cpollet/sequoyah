@@ -110,8 +110,12 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Message<'i
     };
 
     if !lexer.skip_whitespace() {
-        // todo report span
-        return Err("Expected whitespace".to_string());
+        let (line, column) = lexer.location();
+        return Err(format!(
+            "Expected whitespace at {}:{}",
+            line + 1,
+            column + 1
+        ));
     }
 
     let arrow = match lexer.next() {
@@ -126,8 +130,12 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Message<'i
     };
 
     if !lexer.skip_whitespace() {
-        // todo report span
-        return Err("Expected whitespace".to_string());
+        let (line, column) = lexer.location();
+        return Err(format!(
+            "Expected whitespace at {}:{}",
+            line + 1,
+            column + 1
+        ));
     }
 
     let to = match parse_identifier(lexer) {

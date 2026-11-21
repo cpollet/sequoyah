@@ -266,6 +266,10 @@ impl<'input> Lexer<'input> {
         consumed > 0
     }
 
+    pub fn location(&self) -> (usize, usize) {
+        (self.line, self.column)
+    }
+
     pub fn unquoted_string(&mut self) -> Token<'input> {
         //todo use descape crate?
         self.skip_whitespace();
@@ -496,6 +500,10 @@ impl<'input> PeekableLexer<'input> {
     pub fn unquoted_string(&mut self) -> Token<'input> {
         debug_assert!(self.peeked.is_none());
         self.lexer.unquoted_string()
+    }
+
+    pub fn location(&self) -> (usize, usize) {
+        self.lexer.location()
     }
 
     pub fn peek(&mut self) -> Option<&Token<'input>> {
