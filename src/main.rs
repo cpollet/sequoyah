@@ -2,7 +2,7 @@
 #![warn(clippy::pedantic)]
 
 use crate::ast::Graph;
-use crate::cli::Opts;
+use crate::cli::{Opts, OutputFile};
 use crate::emitter::plantuml;
 use clap::Parser;
 use std::fs;
@@ -41,17 +41,21 @@ fn main() {
 
     let graph = Graph::parse(&input)
         .and_then(Graph::check)
+        // .inspect(|g| {
+        //     dbg!(g);
+        // })
         .and_then(|g| g.resolve(&opts.overlays()))
         .unwrap();
+    // eprintln!("{graph:#?}");
 
     let out = plantuml::emit(&graph);
 
     match opts.output() {
-        None => {
+        OutputFile::Stdout => {
             println!("{out}");
         }
-        Some(file) => {
-            if let Err(e) = fs::write(file, out) {
+        OutputFile::File(file) => {
+            if let Err(e) = fs::write(file.as_ref(), out) {
                 eprintln!("Could not write file: {e}");
                 exit(1);
             }
