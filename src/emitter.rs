@@ -1,4 +1,5 @@
 use crate::ast::Graph;
+
 trait Emit {
     fn emit<E>(&self, emitter: E)
     where
@@ -56,7 +57,7 @@ pub mod plantuml {
             };
             self.emit_component_name(&component.name);
             self.output += " as ";
-            self.output += component.alias;
+            self.output += component.identifier;
             self.output += "\n";
         }
 

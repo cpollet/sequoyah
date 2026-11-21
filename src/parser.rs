@@ -1,19 +1,24 @@
-use crate::ast::{Activation, Attribute, Component, ComponentKind, Graph, Message, Value};
+use crate::ast::{
+    Activation, Attribute, Component, ComponentKind, Graph, Message, Overlay, Overlays, Value,
+};
 use crate::lexer::{PeekableLexer, Token};
 use std::borrow::Cow;
 
 type Lexer<'input> = PeekableLexer<'input>;
 type TResult<T> = Result<T, String>;
 
-pub fn parse(input: &str) -> TResult<Graph<'_>> {
-    #[cfg(debug_assertions)]
-    let mut lexer = Token::lexer(input).peekable();
-    parse_graph(&mut lexer)
+impl Graph<'_> {
+    pub fn parse(input: &str) -> TResult<Graph<'_>> {
+        #[cfg(debug_assertions)]
+        let mut lexer = Token::lexer(input).peekable();
+        parse_graph(&mut lexer)
+    }
 }
 
 fn parse_graph<'input>(lexer: &mut Lexer<'input>) -> TResult<Graph<'input>> {
     Ok(Graph {
         components: parse_components(lexer)?,
+        overlays: parse_overlays(lexer)?,
         messages: parse_messages(lexer)?,
     })
 }
@@ -40,6 +45,29 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Componen
     };
     lexer.next();
 
+    let (name, identifier) = parse_name_and_identifier(lexer)?;
+
+    match lexer.next() {
+        Some(Token::Semicolon(_)) => (),
+        Some(token) => {
+            return Err(format!(
+                "Expected ';', got {token} at {span}",
+                span = token.span()
+            ));
+        }
+        None => return Err("Expected ';', got end of input".into()),
+    }
+
+    Ok(Some(Component {
+        kind: component_kind,
+        name,
+        identifier,
+    }))
+}
+
+fn parse_name_and_identifier<'input>(
+    lexer: &mut Lexer<'input>,
+) -> TResult<(Cow<'input, str>, &'input str)> {
     let (name, identifier) = match lexer.next() {
         Some(Token::Identifier(_, identifier)) => (Cow::Borrowed(identifier), Some(identifier)),
         Some(Token::QuotedString(_, string)) => (string, None),
@@ -78,22 +106,7 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Componen
         }
     };
 
-    match lexer.next() {
-        Some(Token::Semicolon(_)) => (),
-        Some(token) => {
-            return Err(format!(
-                "Expected ';', got {token} at {span}",
-                span = token.span()
-            ));
-        }
-        None => return Err("Expected ';', got end of input".into()),
-    }
-
-    Ok(Some(Component {
-        kind: component_kind,
-        name,
-        alias: identifier,
-    }))
+    Ok((name, identifier))
 }
 
 fn parse_messages<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Message<'input>>> {
@@ -293,4 +306,73 @@ fn parse_activation<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Activat
     } else {
         Ok(None)
     }
+}
+
+fn parse_overlays<'input>(lexer: &mut Lexer<'input>) -> TResult<Overlays<'input>> {
+    let mut overlays = Overlays::new();
+    while let Some(overlay) = parse_overlay(lexer)? {
+        overlays.push(overlay);
+    }
+    Ok(overlays)
+}
+
+fn parse_overlay<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Overlay<'input>>> {
+    if lexer
+        .next_if(|token| matches!(token, Token::Overlay(_)))
+        .is_none()
+    {
+        return Ok(None);
+    }
+
+    let kind = match lexer.next() {
+        Some(Token::Component(_)) => ComponentKind::Component,
+        Some(Token::Actor(_)) => ComponentKind::Actor,
+        Some(Token::Boundary(_)) => ComponentKind::Boundary,
+        Some(Token::Control(_)) => ComponentKind::Control,
+        Some(Token::Entity(_)) => ComponentKind::Entity,
+        Some(Token::Database(_)) => ComponentKind::Database,
+        Some(Token::Collections(_)) => ComponentKind::Collections,
+        Some(Token::Queue(_)) => ComponentKind::Queue,
+        Some(token) => {
+            return Err(format!(
+                "Expected component kind, got {token} at {span}",
+                span = token.span()
+            ));
+        }
+        None => return Err("Expected component kind, got end of input".into()),
+    };
+
+    let (name, identifier) = parse_name_and_identifier(lexer)?;
+
+    match lexer.next() {
+        Some(Token::Colon(_)) => (),
+        Some(token) => {
+            return Err(format!(
+                "Expected Colon, got {token} at {span}",
+                span = token.span()
+            ));
+        }
+        None => return Err("Expected Colon, got end of input".into()),
+    }
+
+    let mut components = Vec::new();
+    loop {
+        if lexer
+            .next_if(|token| matches!(token, Token::Semicolon(_)))
+            .is_some()
+        {
+            break;
+        }
+        match parse_identifier(lexer)? {
+            Some(identifier) => components.push(identifier),
+            None => return Err("Expected Semicolon or identifier, got end of input".into()),
+        }
+    }
+
+    Ok(Some(Overlay {
+        kind,
+        name,
+        identifier,
+        components,
+    }))
 }

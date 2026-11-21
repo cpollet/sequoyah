@@ -2,7 +2,7 @@ component "browser" as b;
 component "server" as s;
 database "database" as db;
 
-overlay backend as s db;
+overlay component "backend" as be : s db;
 
 b -> s : GET /page
 {

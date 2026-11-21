@@ -379,6 +379,7 @@ impl<'input> Iterator for Lexer<'input> {
             'd' => self.make_keyword(1, "atabase", Token::Database),
             'e' => self.make_keyword(1, "ntity", Token::Entity),
             'o' => match chars.next() {
+                Some('v') => self.make_keyword(2, "erlay", Token::Overlay),
                 Some('-' | '<') => self.make_arrow(),
                 _ => self.make_identifier(1),
             },
@@ -557,6 +558,7 @@ pub enum Token<'input> {
 
     As(Span),
     Return(Span),
+    Overlay(Span),
 
     LBracket(Span),
     RBracket(Span),
@@ -592,6 +594,7 @@ impl Token<'_> {
             | Token::Arrow(span, _)
             | Token::As(span)
             | Token::Return(span)
+            | Token::Overlay(span)
             | Token::LBracket(span)
             | Token::RBracket(span)
             | Token::LCurly(span)
@@ -623,6 +626,7 @@ impl Display for Token<'_> {
             Token::Arrow(_, _) => write!(f, "Arrow"),
             Token::As(_) => write!(f, "As"),
             Token::Return(_) => write!(f, "Return"),
+            Token::Overlay(_) => write!(f, "Overlay"),
             Token::LBracket(_) => write!(f, "LBracket"),
             Token::RBracket(_) => write!(f, "RBracket"),
             Token::LCurly(_) => write!(f, "LCurly"),
@@ -704,6 +708,20 @@ mod tests {
             Token::Return(Span {
                 start: 0,
                 length: 6,
+                line: 0,
+                column: 0
+            }),
+            "^"
+        );
+    }
+
+    #[test]
+    fn keyword_overlay() {
+        assert_token!(
+            "overlay^",
+            Token::Overlay(Span {
+                start: 0,
+                length: 7,
                 line: 0,
                 column: 0
             }),

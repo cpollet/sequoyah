@@ -3,8 +3,9 @@ use std::borrow::Cow;
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Graph<'input> {
-    pub components: Vec<Component<'input>>,
-    pub messages: Vec<Message<'input>>,
+    pub components: Components<'input>,
+    pub overlays: Overlays<'input>,
+    pub messages: Messages<'input>,
 }
 
 #[allow(unused)]
@@ -12,8 +13,10 @@ pub struct Graph<'input> {
 pub struct Component<'input> {
     pub kind: ComponentKind,
     pub name: Cow<'input, str>,
-    pub alias: &'input str, // todo: rename to identifier
+    pub identifier: &'input str,
 }
+
+pub type Components<'input> = Vec<Component<'input>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ComponentKind {
@@ -37,6 +40,8 @@ pub struct Message<'input> {
     pub text: Option<Cow<'input, str>>,
     pub activation: Option<Activation<'input>>,
 }
+
+pub type Messages<'input> = Vec<Message<'input>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Arrow {
@@ -124,3 +129,14 @@ pub struct Activation<'input> {
     // todo is the message really mandatory? can't we have an arrow with no messages (but a color)?
     pub ret_val: Option<(Vec<Attribute<'input>>, Cow<'input, str>)>,
 }
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Overlay<'input> {
+    pub kind: ComponentKind,
+    pub name: Cow<'input, str>,
+    pub identifier: &'input str,
+    pub components: Vec<&'input str>,
+}
+
+pub type Overlays<'input> = Vec<Overlay<'input>>;
