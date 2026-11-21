@@ -34,8 +34,7 @@ impl<'input> Lexer<'input> {
         }
     }
 
-    // todo remove usize
-    fn make_keyword<F>(&self, mut consumed: usize, remaining: &str, f: F) -> (usize, Token<'input>)
+    fn make_keyword<F>(&self, mut consumed: usize, remaining: &str, f: F) -> Token<'input>
     where
         F: FnOnce(Span) -> Token<'input>,
     {
@@ -53,28 +52,22 @@ impl<'input> Lexer<'input> {
                 }
                 (None, None) => {
                     // both reached the end, we have a keyword
-                    return (
-                        consumed,
-                        f(Span {
-                            start: self.start,
-                            length: consumed,
-                            line: self.line,
-                            column: self.column,
-                        }),
-                    );
+                    return f(Span {
+                        start: self.start,
+                        length: consumed,
+                        line: self.line,
+                        column: self.column,
+                    });
                 }
                 (Some(c), None) if !c.is_ascii_alphanumeric() => {
                     // input does not contain an alphanumeric char, and we reached the end of the
                     // keyword, we make it
-                    return (
-                        consumed,
-                        f(Span {
-                            start: self.start,
-                            length: consumed,
-                            line: self.line,
-                            column: self.column,
-                        }),
-                    );
+                    return f(Span {
+                        start: self.start,
+                        length: consumed,
+                        line: self.line,
+                        column: self.column,
+                    });
                 }
                 (Some(c), _) if c.is_ascii_alphanumeric() => {
                     // both chars don't match, but input contains an alphanumeric char, we make an
@@ -96,27 +89,22 @@ impl<'input> Lexer<'input> {
         }
     }
 
-    // todo remove usize
-    fn make_identifier(&self, consumed: usize) -> (usize, Token<'input>) {
+    fn make_identifier(&self, consumed: usize) -> Token<'input> {
         let chars = self.remaining[consumed..].chars();
         let consumed = consumed + chars.take_while(char::is_ascii_alphanumeric).count();
 
-        (
-            consumed,
-            Token::Identifier(
-                Span {
-                    start: self.start,
-                    length: consumed,
-                    line: self.line,
-                    column: self.column,
-                },
-                &self.remaining[0..consumed],
-            ),
+        Token::Identifier(
+            Span {
+                start: self.start,
+                length: consumed,
+                line: self.line,
+                column: self.column,
+            },
+            &self.remaining[0..consumed],
         )
     }
 
-    // todo remove usize
-    fn make_quoted_string(&self, mut chars: Chars) -> (usize, Token<'input>) {
+    fn make_quoted_string(&self, mut chars: Chars) -> Token<'input> {
         //todo use descape crate?
         let mut consumed = 1; // the initial '"' is already consumed
 
@@ -165,25 +153,21 @@ impl<'input> Lexer<'input> {
             }
         }
 
-        (
-            consumed,
-            Token::QuotedString(
-                Span {
-                    start: self.start,
-                    length: consumed,
-                    line: self.line,
-                    column: self.column,
-                },
-                owned.map_or_else(
-                    || Cow::Borrowed(&self.remaining[1..consumed - 1]),
-                    Cow::Owned,
-                ),
+        Token::QuotedString(
+            Span {
+                start: self.start,
+                length: consumed,
+                line: self.line,
+                column: self.column,
+            },
+            owned.map_or_else(
+                || Cow::Borrowed(&self.remaining[1..consumed - 1]),
+                Cow::Owned,
             ),
         )
     }
 
-    // todo remove usize
-    fn make_arrow(&self) -> (usize, Token<'input>) {
+    fn make_arrow(&self) -> Token<'input> {
         let consumed = 1 + self.remaining[1..]
             .chars()
             .take_while(|c| *c == 'o' || *c == 'x' || *c == '<' || *c == '>' || *c == '-')
@@ -198,13 +182,12 @@ impl<'input> Lexer<'input> {
         let arrow_str = &self.remaining[0..consumed];
 
         match arrows::ARROWS.get(arrow_str) {
-            Some(arrow) => (consumed, Token::Arrow(span, arrow)),
-            None => (consumed, Token::Invalid(span, arrow_str)),
+            Some(arrow) => Token::Arrow(span, arrow),
+            None => Token::Invalid(span, arrow_str),
         }
     }
 
-    // todo remove usize
-    fn make_color(&self) -> (usize, Token<'input>) {
+    fn make_color(&self) -> Token<'input> {
         static RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^#[a-fA-F0-9]{6}$").unwrap());
 
         let code = &self.remaining[0..7];
@@ -216,9 +199,9 @@ impl<'input> Lexer<'input> {
         };
 
         if RE.is_match(code) {
-            (7, Token::HexColor(span, code))
+            Token::HexColor(span, code)
         } else {
-            (7, Token::Invalid(span, code))
+            Token::Invalid(span, code)
         }
     }
 
@@ -360,7 +343,7 @@ impl<'input> Iterator for Lexer<'input> {
 
         let mut chars = self.remaining.chars();
 
-        let (consumed, token) = match chars.next()? {
+        let token = match chars.next()? {
             'a' => match chars.next() {
                 Some('s') => self.make_keyword(2, "", Token::As),
                 Some('c') => self.make_keyword(2, "tor", Token::Actor),
@@ -391,97 +374,70 @@ impl<'input> Iterator for Lexer<'input> {
             },
             c if c.is_ascii_alphabetic() => self.make_identifier(1),
             '-' | '<' => self.make_arrow(),
-            ':' => (
-                1,
-                Token::Colon(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
-            ';' => (
-                1,
-                Token::Semicolon(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
-            ',' => (
-                1,
-                Token::Comma(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
+            ':' => Token::Colon(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
+            ';' => Token::Semicolon(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
+            ',' => Token::Comma(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
             '"' => self.make_quoted_string(chars),
-            '[' => (
-                1,
-                Token::LBracket(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
-            ']' => (
-                1,
-                Token::RBracket(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
-            '{' => (
-                1,
-                Token::LCurly(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
-            '}' => (
-                1,
-                Token::RCurly(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
-            '=' => (
-                1,
-                Token::Equal(Span {
-                    start: self.start,
-                    length: 1,
-                    line: self.line,
-                    column: self.column,
-                }),
-            ),
+            '[' => Token::LBracket(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
+            ']' => Token::RBracket(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
+            '{' => Token::LCurly(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
+            '}' => Token::RCurly(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
+            '=' => Token::Equal(Span {
+                start: self.start,
+                length: 1,
+                line: self.line,
+                column: self.column,
+            }),
             '#' => self.make_color(),
-            _ => (
-                1,
-                Token::Invalid(
-                    Span {
-                        start: self.start,
-                        length: 1,
-                        line: self.line,
-                        column: self.column,
-                    },
-                    &self.remaining[0..1],
-                ),
+            _ => Token::Invalid(
+                Span {
+                    start: self.start,
+                    length: 1,
+                    line: self.line,
+                    column: self.column,
+                },
+                &self.remaining[0..1],
             ),
         };
 
-        self.remaining = &self.remaining[consumed..];
-        self.start += consumed;
-        self.column += consumed;
+        self.remaining = &self.remaining[token.span().length..];
+        self.start += token.span().length;
+        self.column += token.span().length;
 
         Some(token)
     }
