@@ -65,7 +65,7 @@ pub mod plantuml {
             self.emit_arrow(&message.arrow, Self::extract_color(&message.attributes));
             self.output += message.to;
 
-            if let Some(message) = message.message.as_ref() {
+            if let Some(message) = message.text.as_ref() {
                 self.output += " : ";
                 self.emit_message_text(message);
             }
@@ -77,7 +77,7 @@ pub mod plantuml {
                 self.output += message.to;
                 self.output += "\n";
 
-                for message in activation.messages.iter() {
+                for message in &activation.messages {
                     self.emit_message(message);
                 }
 
@@ -193,12 +193,12 @@ pub mod plantuml {
         fn emit_graph(self, graph: &Graph<'_>) {
             self.output += "@startuml\n";
 
-            for component in graph.components.iter() {
+            for component in &graph.components {
                 self.emit_component(component);
             }
             self.output += "\n";
 
-            for message in graph.messages.iter() {
+            for message in &graph.messages {
                 self.emit_message(message);
             }
 

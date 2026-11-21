@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![warn(clippy::pedantic)]
 
 use crate::parser::parse;
 

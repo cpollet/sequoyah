@@ -34,7 +34,7 @@ pub struct Message<'input> {
     pub arrow: Arrow,
     pub to: &'input str,
     pub attributes: Vec<Attribute<'input>>,
-    pub message: Option<Cow<'input, str>>,
+    pub text: Option<Cow<'input, str>>,
     pub activation: Option<Activation<'input>>,
 }
 
@@ -49,7 +49,7 @@ pub struct Arrow {
 
 impl Arrow {
     pub fn direction(&self) -> ArrowDirection {
-        use ArrowHead::*;
+        use ArrowHead::None;
         match (self.left_head, self.right_head) {
             (None, None) => ArrowDirection::None,
             (None, _) => ArrowDirection::Ltr,

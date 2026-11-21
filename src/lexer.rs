@@ -30,7 +30,7 @@ impl<'input> Lexer<'input> {
     pub fn peekable(self) -> PeekableLexer<'input> {
         PeekableLexer {
             lexer: self,
-            peeked: Default::default(),
+            peeked: Option::default(),
         }
     }
 
@@ -45,11 +45,11 @@ impl<'input> Lexer<'input> {
         loop {
             let (c, r) = (chars.next(), remaining.next());
 
+            #[allow(clippy::match_same_arms)]
             match (c, r) {
                 (Some(c), Some(r)) if c == r => {
                     // both chars match, we keep consuming
                     consumed += 1;
-                    continue;
                 }
                 (None, None) => {
                     // both reached the end, we have a keyword
@@ -174,9 +174,10 @@ impl<'input> Lexer<'input> {
                     line: self.line,
                     column: self.column,
                 },
-                owned
-                    .map(Cow::Owned)
-                    .unwrap_or_else(|| Cow::Borrowed(&self.remaining[1..consumed - 1])),
+                owned.map_or_else(
+                    || Cow::Borrowed(&self.remaining[1..consumed - 1]),
+                    Cow::Owned,
+                ),
             ),
         )
     }
@@ -336,9 +337,7 @@ impl<'input> Lexer<'input> {
                 line,
                 column,
             },
-            owned
-                .map(Cow::Owned)
-                .unwrap_or_else(|| Cow::Borrowed(&self.remaining[0..string_len])),
+            owned.map_or_else(|| Cow::Borrowed(&self.remaining[0..string_len]), Cow::Owned),
         );
 
         self.remaining = &self.remaining[consumed..];
@@ -351,6 +350,7 @@ impl<'input> Lexer<'input> {
 impl<'input> Iterator for Lexer<'input> {
     type Item = Token<'input>;
 
+    #[allow(clippy::too_many_lines)]
     fn next(&mut self) -> Option<Self::Item> {
         self.skip_whitespace();
 
@@ -547,27 +547,27 @@ impl Token<'_> {
 
     pub fn span(&self) -> &Span {
         match self {
-            Token::Component(span) => span,
-            Token::Actor(span) => span,
-            Token::Boundary(span) => span,
-            Token::Control(span) => span,
-            Token::Entity(span) => span,
-            Token::Database(span) => span,
-            Token::Collections(span) => span,
-            Token::Queue(span) => span,
-            Token::Identifier(span, _) => span,
-            Token::QuotedString(span, _) => span,
-            Token::UnquotedString(span, _) => span,
-            Token::HexColor(span, _) => span,
-            Token::Arrow(span, _) => span,
-            Token::As(span) => span,
-            Token::LBracket(span) => span,
-            Token::RBracket(span) => span,
-            Token::Equal(span) => span,
-            Token::Comma(span) => span,
-            Token::Colon(span) => span,
-            Token::Semicolon(span) => span,
-            Token::Invalid(span, _) => span,
+            Token::Component(span)
+            | Token::Actor(span)
+            | Token::Boundary(span)
+            | Token::Control(span)
+            | Token::Entity(span)
+            | Token::Database(span)
+            | Token::Collections(span)
+            | Token::Queue(span)
+            | Token::Identifier(span, _)
+            | Token::QuotedString(span, _)
+            | Token::UnquotedString(span, _)
+            | Token::HexColor(span, _)
+            | Token::Arrow(span, _)
+            | Token::As(span)
+            | Token::LBracket(span)
+            | Token::RBracket(span)
+            | Token::Equal(span)
+            | Token::Comma(span)
+            | Token::Colon(span)
+            | Token::Semicolon(span)
+            | Token::Invalid(span, _) => span,
         }
     }
 }
