@@ -1,10 +1,14 @@
 component "browser" as b;
-component server;
-database "database" as d;
-b --> server:text
-server -> d [color=#ff0000] : text
-server -> d [color=blue]
-server -> d [color="#00ff00", other=x] {
-    a -> b [color=cyan]: lol
-    return [color=yellow] : ok
+component "server" as s;
+database "database" as db;
+
+overlay backend as s db;
+
+b -> s : GET /page
+{
+    s -> db : select ...
+    {
+        return: data
+    }
+    return: html
 }

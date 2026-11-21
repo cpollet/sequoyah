@@ -10,7 +10,7 @@ mod lexer;
 mod parser;
 
 fn main() {
-    let input = include_str!("../examples/diagram.seq");
+    let input = include_str!("../examples/diagram.wip.seq");
     let graph = parse(input).unwrap();
     eprintln!("{graph:#?}");
     println!("{}", emitter::plantuml::emit(&graph));
