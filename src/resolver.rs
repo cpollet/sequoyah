@@ -138,6 +138,7 @@ impl<'input> From<Overlay<'input>> for Component<'input> {
             kind: value.kind,
             name: value.name,
             identifier: value.identifier,
+            attributes: value.attributes,
         }
     }
 }

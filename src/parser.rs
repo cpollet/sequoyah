@@ -47,21 +47,25 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Componen
 
     let (name, identifier) = parse_name_and_identifier(lexer)?;
 
+    let attributes = parse_attributes(lexer)?;
+
     match lexer.next() {
         Some(Token::Semicolon(_)) => (),
+        // todo add LBracket if not seen before
         Some(token) => {
             return Err(format!(
-                "Expected ';', got {token} at {span}",
+                "Expected Semicolon, got {token} at {span}",
                 span = token.span()
             ));
         }
-        None => return Err("Expected ';', got end of input".into()),
+        None => return Err("Expected Semicolon, got end of input".into()),
     }
 
     Ok(Some(Component {
         kind: component_kind,
         name,
         identifier,
+        attributes,
     }))
 }
 
@@ -344,8 +348,11 @@ fn parse_overlay<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Overlay<'i
 
     let (name, identifier) = parse_name_and_identifier(lexer)?;
 
+    let attributes = parse_attributes(lexer)?;
+
     match lexer.next() {
         Some(Token::Colon(_)) => (),
+        // todo add LBracket if not seen before
         Some(token) => {
             return Err(format!(
                 "Expected Colon, got {token} at {span}",
@@ -374,5 +381,6 @@ fn parse_overlay<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Overlay<'i
         name,
         identifier,
         components,
+        attributes,
     }))
 }

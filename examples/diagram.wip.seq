@@ -1,10 +1,10 @@
-component "browser" as b;
+component "browser" as b [color=salmon];
 component "server" as s;
 database "database" as db;
 
-overlay component "backend" as be : s db;
+overlay component "backend" as be [color=lightblue] : s db;
 
-b -> s : GET /page
+b -> s [color=blue] : GET /page
 {
     s -> db : select ...
     {

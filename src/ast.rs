@@ -14,6 +14,7 @@ pub struct Component<'input> {
     pub kind: ComponentKind,
     pub name: Cow<'input, str>,
     pub identifier: &'input str,
+    pub attributes: Vec<Attribute<'input>>,
 }
 
 pub type Components<'input> = Vec<Component<'input>>;
@@ -137,6 +138,7 @@ pub struct Overlay<'input> {
     pub name: Cow<'input, str>,
     pub identifier: &'input str,
     pub components: Vec<&'input str>,
+    pub attributes: Vec<Attribute<'input>>,
 }
 
 pub type Overlays<'input> = Vec<Overlay<'input>>;

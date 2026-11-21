@@ -58,6 +58,12 @@ pub mod plantuml {
             self.emit_component_name(&component.name);
             self.output += " as ";
             self.output += component.identifier;
+
+            if let Some(color) = Self::extract_color(&component.attributes) {
+                self.output += " ";
+                self.output += color;
+            }
+
             self.output += "\n";
         }
 
@@ -178,6 +184,8 @@ pub mod plantuml {
         }
 
         fn extract_color<'a>(attributes: &'a [Attribute]) -> Option<&'a str> {
+            // todo error reporting on invalid quoted color and on invalid color name (identifier)
+            // todo parse quoted color as either an identifier or an hexcolor
             attributes
                 .iter()
                 .find(|a| a.key.eq_ignore_ascii_case("color"))
