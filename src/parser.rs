@@ -20,24 +20,23 @@ fn parse_graph<'input>(lexer: &mut Lexer<'input>) -> TResult<Graph<'input>> {
 
 fn parse_components<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Component<'input>>> {
     let mut components = Vec::new();
-    while let Some(component) = parse_component(lexer) {
-        components.push(component?);
+    while let Some(component) = parse_component(lexer)? {
+        components.push(component);
     }
     Ok(components)
 }
 
-// todo refactor: should be TResult<Option, ..>>
-fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Component<'input>>> {
-    let component_kind = match lexer.peek()? {
-        Token::Component(_) => ComponentKind::Component,
-        Token::Actor(_) => ComponentKind::Actor,
-        Token::Boundary(_) => ComponentKind::Boundary,
-        Token::Control(_) => ComponentKind::Control,
-        Token::Entity(_) => ComponentKind::Entity,
-        Token::Database(_) => ComponentKind::Database,
-        Token::Collections(_) => ComponentKind::Collections,
-        Token::Queue(_) => ComponentKind::Queue,
-        _ => return None,
+fn parse_component<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Component<'input>>> {
+    let component_kind = match lexer.peek() {
+        Some(Token::Component(_)) => ComponentKind::Component,
+        Some(Token::Actor(_)) => ComponentKind::Actor,
+        Some(Token::Boundary(_)) => ComponentKind::Boundary,
+        Some(Token::Control(_)) => ComponentKind::Control,
+        Some(Token::Entity(_)) => ComponentKind::Entity,
+        Some(Token::Database(_)) => ComponentKind::Database,
+        Some(Token::Collections(_)) => ComponentKind::Collections,
+        Some(Token::Queue(_)) => ComponentKind::Queue,
+        _ => return Ok(None),
     };
     lexer.next();
 
@@ -45,12 +44,12 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Componen
         Some(Token::Identifier(_, identifier)) => (Cow::Borrowed(identifier), Some(identifier)),
         Some(Token::QuotedString(_, string)) => (string, None),
         Some(token) => {
-            return Some(Err(format!(
+            return Err(format!(
                 "Expected name or identifier, got {token} at {span}",
                 span = token.span()
-            )));
+            ));
         }
-        None => return Some(Err("Expected name or identifier, got end of input".into())),
+        None => return Err("Expected name or identifier, got end of input".into()),
     };
 
     let identifier = if let Some(identifier) = identifier {
@@ -59,38 +58,38 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Componen
         match lexer.next() {
             Some(Token::As(_)) => (),
             Some(token) => {
-                return Some(Err(format!(
+                return Err(format!(
                     "Expected 'as', got {token} at {span}",
                     span = token.span()
-                )));
+                ));
             }
-            None => return Some(Err("Expected 'as', got end of input".into())),
+            None => return Err("Expected 'as', got end of input".into()),
         }
 
         match lexer.next() {
             Some(Token::Identifier(_, identifier)) => identifier,
             Some(token) => {
-                return Some(Err(format!(
+                return Err(format!(
                     "Expected identifier, got {token} at {span}",
                     span = token.span()
-                )));
+                ));
             }
-            None => return Some(Err("Expected identifier, got end of input".into())),
+            None => return Err("Expected identifier, got end of input".into()),
         }
     };
 
     match lexer.next() {
         Some(Token::Semicolon(_)) => (),
         Some(token) => {
-            return Some(Err(format!(
+            return Err(format!(
                 "Expected ';', got {token} at {span}",
                 span = token.span()
-            )));
+            ));
         }
-        None => return Some(Err("Expected ';', got end of input".into())),
+        None => return Err("Expected ';', got end of input".into()),
     }
 
-    Some(Ok(Component {
+    Ok(Some(Component {
         kind: component_kind,
         name,
         alias: identifier,
@@ -99,59 +98,49 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Componen
 
 fn parse_messages<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Message<'input>>> {
     let mut messages = Vec::new();
-    while let Some(message) = parse_message(lexer) {
-        messages.push(message?);
+    while let Some(message) = parse_message(lexer)? {
+        messages.push(message);
     }
     Ok(messages)
 }
 
-// todo refactor: should be TResult<Option, ..>>
-fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'input>>> {
-    let from = match parse_identifier(lexer)? {
-        Ok(i) => i,
-        Err(e) => return Some(Err(e)),
+fn parse_message<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Message<'input>>> {
+    let Some(from) = parse_identifier(lexer)? else {
+        return Ok(None);
     };
 
     if !lexer.skip_whitespace() {
         // todo report span
-        return Some(Err("Expected whitespace".to_string()));
+        return Err("Expected whitespace".to_string());
     }
 
     let arrow = match lexer.next() {
         Some(Token::Arrow(_, arrow)) => arrow,
         Some(token) => {
-            return Some(Err(format!(
+            return Err(format!(
                 "Expected arrow, got {token} at {span}",
                 span = token.span()
-            )));
+            ));
         }
-        None => return Some(Err("Expected arrow, got end of input".into())),
+        None => return Err("Expected arrow, got end of input".into()),
     };
 
     if !lexer.skip_whitespace() {
         // todo report span
-        return Some(Err("Expected whitespace".to_string()));
+        return Err("Expected whitespace".to_string());
     }
 
     let to = match parse_identifier(lexer) {
-        Some(Ok(i)) => i,
-        Some(Err(e)) => return Some(Err(e)),
-        None => return Some(Err("Expected identifier, got end of input".into())),
+        Ok(Some(i)) => i,
+        Ok(None) => return Err("Expected identifier, got end of input".into()),
+        Err(e) => return Err(e),
     };
 
-    let attributes = match parse_attributes(lexer) {
-        Ok(attributes) => attributes,
-        Err(e) => return Some(Err(e)),
-    };
-
+    let attributes = parse_attributes(lexer)?;
     let message = parse_message_text(lexer);
+    let activation = parse_activation(lexer)?;
 
-    let activation = match parse_activation(lexer) {
-        Ok(activation) => activation,
-        Err(e) => return Some(Err(e)),
-    };
-
-    Some(Ok(Message {
+    Ok(Some(Message {
         from,
         arrow: arrow.clone(),
         to,
@@ -161,15 +150,15 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<Message<'i
     }))
 }
 
-// todo refactor: should be TResult<Option, ..>>
-fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> Option<TResult<&'input str>> {
-    Some(match lexer.next()? {
-        Token::Identifier(_, identifier) => Ok(identifier),
-        token => Err(format!(
+fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<&'input str>> {
+    match lexer.next() {
+        None => Ok(None),
+        Some(Token::Identifier(_, identifier)) => Ok(Some(identifier)),
+        Some(token) => Err(format!(
             "Expected identifier, got {token} at {span}",
             span = token.span()
         )),
-    })
+    }
 }
 
 fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Attribute<'input>>> {
@@ -282,9 +271,8 @@ fn parse_activation<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Activat
                     None => return Err("Expected RCurly, got end of input".into()),
                 }
             }
-            match parse_message(lexer) {
-                Some(Err(e)) => return Err(e),
-                Some(Ok(message)) => messages.push(message),
+            match parse_message(lexer)? {
+                Some(message) => messages.push(message),
                 None => {
                     return Err(
                         "Expected RCurly, Return or identifier, got end of input".to_string()
