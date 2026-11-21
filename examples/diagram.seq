@@ -2,6 +2,8 @@ component "browser" as b;
 component "server" as s;
 database "database" as d;
 
+overlay component "backend" as be : s d;
+
 b -x s [color="#ff0000", ] : GET /path "lol"\n2nd line {}
 {
     s ->o d [color=blue] : SELECT
