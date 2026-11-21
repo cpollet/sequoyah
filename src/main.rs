@@ -16,7 +16,7 @@ fn main() {
     let input = include_str!("../examples/diagram.wip.seq");
     let graph = Graph::parse(input)
         .and_then(Graph::check)
-        .and_then(|g| g.resolve(&["be"]))
+        .and_then(|g| g.resolve(&["*"]))
         .unwrap();
     //eprintln!("{graph:#?}");
     println!("{}", plantuml::emit(&graph));

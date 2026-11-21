@@ -5,7 +5,9 @@ use std::hash::RandomState;
 type Result<T> = std::result::Result<T, String>;
 impl Graph<'_> {
     pub fn resolve(self, expanded_overlays: &[&str]) -> Result<Self> {
-        if expanded_overlays.is_empty() {
+        let expanded_overlays =
+            HashSet::<_, RandomState>::from_iter(expanded_overlays.iter().copied());
+        if expanded_overlays.contains("*") {
             return Ok(self);
         }
 
@@ -15,11 +17,8 @@ impl Graph<'_> {
             messages,
         } = self;
 
-        let (components, component_map) = resolve_components(
-            overlays,
-            components,
-            &HashSet::<_, RandomState>::from_iter(expanded_overlays.iter().copied()),
-        )?;
+        let (components, component_map) =
+            resolve_components(overlays, components, &expanded_overlays)?;
 
         let messages = messages
             .into_iter()
