@@ -5,7 +5,7 @@ use std::borrow::Cow;
 pub struct Graph<'input> {
     pub components: Components<'input>,
     pub overlays: Overlays<'input>,
-    pub messages: Messages<'input>,
+    pub events: Vec<Event<'input>>,
 }
 
 #[allow(unused)]
@@ -14,7 +14,7 @@ pub struct Component<'input> {
     pub kind: ComponentKind,
     pub name: Cow<'input, str>,
     pub identifier: &'input str,
-    pub attributes: Vec<Attribute<'input>>,
+    pub attributes: Attributes<'input>,
 }
 
 pub type Components<'input> = Vec<Component<'input>>;
@@ -37,12 +37,19 @@ pub struct Message<'input> {
     pub from: &'input str,
     pub arrow: Arrow,
     pub to: &'input str,
-    pub attributes: Vec<Attribute<'input>>,
+    pub attributes: Attributes<'input>,
     pub text: Option<Cow<'input, str>>,
     pub activation: Option<Activation<'input>>,
 }
 
-pub type Messages<'input> = Vec<Message<'input>>;
+#[allow(unused)]
+#[derive(Debug)]
+pub enum Event<'input> {
+    Message(Message<'input>),
+    Note(Note<'input>),
+}
+
+pub type Events<'input> = Vec<Event<'input>>;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Arrow {
@@ -91,29 +98,39 @@ pub enum ArrowDirection {
 #[allow(unused)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Attribute<'input> {
-    pub key: &'input str,
+    pub key: Key,
     pub value: Value<'input>,
 }
 
-impl<'input> From<Attribute<'input>> for (&'input str, Value<'input>) {
+pub type Attributes<'input> = Vec<Attribute<'input>>;
+
+impl<'input> From<Attribute<'input>> for (Key, Value<'input>) {
     fn from(value: Attribute<'input>) -> Self {
         (value.key, value.value)
     }
 }
 
-impl<'a, 'input> From<&'a Attribute<'input>> for (&'input str, &'a Value<'input>) {
+impl<'a, 'input> From<&'a Attribute<'input>> for (Key, &'a Value<'input>) {
     fn from(value: &'a Attribute<'input>) -> Self {
         (value.key, &value.value)
     }
 }
 
-impl<'input> From<(&'input str, Value<'input>)> for Attribute<'input> {
-    fn from(value: (&'input str, Value<'input>)) -> Self {
+impl<'input> From<(Key, Value<'input>)> for Attribute<'input> {
+    fn from(value: (Key, Value<'input>)) -> Self {
         Attribute {
             key: value.0,
             value: value.1,
         }
     }
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Color,
+    LeftOf,
+    RightOf,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -126,7 +143,7 @@ pub enum Value<'input> {
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Activation<'input> {
-    pub messages: Vec<Message<'input>>,
+    pub events: Events<'input>,
     // todo is the message really mandatory? can't we have an arrow with no messages (but a color)?
     pub ret_val: Option<(Vec<Attribute<'input>>, Cow<'input, str>)>,
 }
@@ -138,7 +155,14 @@ pub struct Overlay<'input> {
     pub name: Cow<'input, str>,
     pub identifier: &'input str,
     pub components: Vec<&'input str>,
-    pub attributes: Vec<Attribute<'input>>,
+    pub attributes: Attributes<'input>,
 }
 
 pub type Overlays<'input> = Vec<Overlay<'input>>;
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Note<'input> {
+    pub text: Cow<'input, str>,
+    pub attributes: Attributes<'input>,
+}

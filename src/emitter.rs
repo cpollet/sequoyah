@@ -21,8 +21,8 @@ trait Emitter {
 
 pub mod plantuml {
     use crate::ast::{
-        Arrow, ArrowBody, ArrowDirection, ArrowHead, Attribute, Component, ComponentKind, Graph,
-        Message, Value,
+        Arrow, ArrowBody, ArrowDirection, ArrowHead, Attribute, Component, ComponentKind, Event,
+        Graph, Key, Message, Note, Value,
     };
     use crate::emitter::{Emit, Emitter};
     use std::fmt::Write;
@@ -67,6 +67,13 @@ pub mod plantuml {
             self.output += "\n";
         }
 
+        fn emit_event(&mut self, event: &Event) {
+            match event {
+                Event::Message(message) => self.emit_message(message),
+                Event::Note(note) => self.emit_note(note),
+            }
+        }
+
         fn emit_message(&mut self, message: &Message) {
             self.output += message.from;
             self.emit_arrow(&message.arrow, Self::extract_color(&message.attributes));
@@ -84,8 +91,8 @@ pub mod plantuml {
                 self.output += message.to;
                 self.output += "\n";
 
-                for message in &activation.messages {
-                    self.emit_message(message);
+                for event in &activation.events {
+                    self.emit_event(event);
                 }
 
                 if let Some((attributes, ret_val)) = activation.ret_val.as_ref() {
@@ -183,12 +190,42 @@ pub mod plantuml {
             }
         }
 
+        fn emit_note(&mut self, note: &Note) {
+            let pos = note
+                .attributes
+                .iter()
+                .find_map(NotePosition::opt_from)
+                .unwrap_or_default();
+
+            self.output += "note ";
+            match pos {
+                NotePosition::Across => self.output += "across\n",
+                NotePosition::Left => self.output += "left\n",
+                NotePosition::LeftOf(component) => {
+                    self.output += "left of ";
+                    self.output += component;
+                    self.output += "\n";
+                }
+                NotePosition::Right => self.output += "right\n",
+                NotePosition::RightOf(component) => {
+                    self.output += "right of ";
+                    self.output += component;
+                    self.output += "\n";
+                }
+            }
+            self.output += note.text.as_ref();
+            if !note.text.ends_with('\n') {
+                self.output += "\n";
+            }
+            self.output += "end note\n";
+        }
+
         fn extract_color<'a>(attributes: &'a [Attribute]) -> Option<&'a str> {
             // todo error reporting on invalid quoted color and on invalid color name (identifier)
             // todo parse quoted color as either an identifier or an hexcolor
             attributes
                 .iter()
-                .find(|a| a.key.eq_ignore_ascii_case("color"))
+                .find(|a| matches!(a.key, Key::Color))
                 .map(|a| &a.value)
                 .and_then(|v| match v {
                     Value::Identifier(identifier) => crate::colors::COLORS.get(identifier).copied(),
@@ -208,11 +245,40 @@ pub mod plantuml {
             }
             self.output += "\n";
 
-            for message in &graph.messages {
-                self.emit_message(message);
+            for event in &graph.events {
+                self.emit_event(event);
             }
 
             self.output += "@enduml\n";
+        }
+    }
+
+    #[derive(Debug, Default)]
+    enum NotePosition<'input> {
+        #[default]
+        Across,
+        Left,
+        LeftOf(&'input str),
+        Right,
+        RightOf(&'input str),
+    }
+
+    impl<'input> NotePosition<'input> {
+        fn opt_from(attribute: &Attribute<'input>) -> Option<Self> {
+            match attribute.key {
+                //"left" => Some(Self::Left),
+                Key::LeftOf => match attribute.value {
+                    Value::Identifier(identifier) => Some(Self::LeftOf(identifier)),
+                    Value::Quoted(_) | Value::HexColor(_) => None,
+                },
+                //"right" => Some(Self::Right),
+                Key::RightOf => match attribute.value {
+                    Value::Identifier(identifier) => Some(Self::LeftOf(identifier)),
+                    Value::Quoted(_) | Value::HexColor(_) => None,
+                },
+                //Key::Across => Some(Self::Across),
+                Key::Color => None,
+            }
         }
     }
 }

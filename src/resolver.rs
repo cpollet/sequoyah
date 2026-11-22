@@ -1,4 +1,6 @@
-use crate::ast::{Activation, Component, Components, Graph, Message, Overlay, Overlays};
+use crate::ast::{
+    Activation, Component, Components, Event, Graph, Key, Message, Note, Overlay, Overlays, Value,
+};
 use std::collections::{HashMap, HashSet};
 
 type Result<T> = std::result::Result<T, String>;
@@ -11,21 +13,21 @@ impl Graph<'_> {
         let Graph {
             components,
             overlays,
-            messages,
+            events,
         } = self;
 
         let (components, component_map) =
             resolve_components(overlays, components, expanded_overlays)?;
 
-        let messages = messages
+        let events = events
             .into_iter()
-            .filter_map(|message| resolve_message(message, &component_map))
+            .filter_map(|event| resolve_event(event, &component_map))
             .collect::<Vec<_>>();
 
         Ok(Self {
             components,
             overlays: Vec::default(),
-            messages,
+            events,
         })
     }
 }
@@ -97,6 +99,16 @@ fn resolve_components<'input>(
     Ok((displayed_components, component_map))
 }
 
+fn resolve_event<'input>(
+    event: Event<'input>,
+    component_map: &HashMap<&'input str, &'input str>,
+) -> Option<Event<'input>> {
+    match event {
+        Event::Message(message) => resolve_message(message, component_map).map(Event::Message),
+        Event::Note(note) => resolve_note(note, component_map).map(Event::Note),
+    }
+}
+
 fn resolve_message<'input>(
     mut message: Message<'input>,
     component_map: &HashMap<&'input str, &'input str>,
@@ -109,10 +121,10 @@ fn resolve_message<'input>(
     } else {
         let activation = match message.activation.take() {
             Some(activation) => Some(Activation {
-                messages: activation
-                    .messages
+                events: activation
+                    .events
                     .into_iter()
-                    .filter_map(|m| resolve_message(m, component_map))
+                    .filter_map(|event| resolve_event(event, component_map))
                     .collect::<Vec<_>>(),
                 ret_val: activation.ret_val,
             }),
@@ -126,6 +138,24 @@ fn resolve_message<'input>(
             ..message
         })
     }
+}
+
+fn resolve_note<'input>(
+    note: Note<'input>,
+    component_map: &HashMap<&'input str, &'input str>,
+) -> Option<Note<'input>> {
+    if let Some(ref_component) = note.attributes.iter().find_map(|attr| match attr.key {
+        Key::Color => None,
+        Key::LeftOf | Key::RightOf => Some(match attr.value {
+            Value::Identifier(identifier) => identifier,
+            Value::Quoted(_) | Value::HexColor(_) => unreachable!(),
+        }),
+    }) && component_map.contains_key(ref_component)
+    {
+        return None;
+    }
+
+    Some(note)
 }
 
 impl<'input> From<Overlay<'input>> for Component<'input> {

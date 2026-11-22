@@ -1,4 +1,4 @@
-use crate::ast::Graph;
+use crate::ast::{Event, Graph, Key, Note, Value};
 use std::collections::HashSet;
 
 type Result<T> = std::result::Result<T, String>;
@@ -13,15 +13,75 @@ impl Graph<'_> {
         }
         let components = components;
 
-        for message in &self.messages {
-            if !components.contains(message.from) {
-                return Err(format!("Source component {} does not exist", message.from));
-            }
-            if !components.contains(message.to) {
-                return Err(format!(
-                    "Destination component {} does not exist",
-                    message.to
-                ));
+        for event in &self.events {
+            match event {
+                Event::Message(message) => {
+                    if !components.contains(message.from) {
+                        return Err(format!("Source component {} does not exist", message.from));
+                    }
+                    if !components.contains(message.to) {
+                        return Err(format!(
+                            "Destination component {} does not exist",
+                            message.to
+                        ));
+                    }
+                }
+                Event::Note(note) => {
+                    // todo check leftof / rightof component
+                    let Note { attributes, .. } = note;
+
+                    let mut leftof_rightof_seen = false;
+
+                    for attribute in attributes {
+                        match attribute.key {
+                            Key::LeftOf => {
+                                if leftof_rightof_seen {
+                                    return Err("Duplicate leftof/rightof attribute".to_string());
+                                }
+
+                                leftof_rightof_seen = true;
+
+                                match attribute.value {
+                                    Value::Identifier(identifier) => {
+                                        if !components.contains(identifier) {
+                                            return Err(format!(
+                                                "Identifier {identifier} not defined for leftof attribute",
+                                            ));
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(
+                                            "Identifier expected for leftof attribute".to_string()
+                                        );
+                                    }
+                                }
+                            }
+                            Key::RightOf => {
+                                if leftof_rightof_seen {
+                                    return Err("Duplicate leftof/rightof attribute".to_string());
+                                }
+
+                                leftof_rightof_seen = true;
+
+                                match attribute.value {
+                                    Value::Identifier(identifier) => {
+                                        if !components.contains(identifier) {
+                                            return Err(format!(
+                                                "Identifier {identifier} not defined for rightof attribute",
+                                            ));
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(
+                                            "Identifier expected for rightof attribute".to_string()
+                                        );
+                                    }
+                                }
+                            }
+                            Key::Color => {}
+                        }
+                    }
+                }
             }
         }
 

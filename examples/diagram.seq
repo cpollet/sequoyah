@@ -9,6 +9,7 @@ b -x s [color="#ff0000", ] : GET /path "lol"\n2nd line {}
     s ->o d [color=blue] : SELECT
     {
         d <- d [color=green] : ok
+        note [leftof=d] "text"
         return [color=orange] : ok
     }
     return [color=#ff0000, ] : data

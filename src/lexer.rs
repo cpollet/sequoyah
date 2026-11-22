@@ -352,7 +352,11 @@ impl<'input> Iterator for Lexer<'input> {
             'b' => self.make_keyword(1, "oundary", Token::Boundary),
             'c' => match chars.next() {
                 Some('o') => match chars.next() {
-                    Some('l') => self.make_keyword(3, "lections", Token::Collections),
+                    Some('l') => match chars.next() {
+                        Some('l') => self.make_keyword(4, "ections", Token::Collections),
+                        Some('o') => self.make_keyword(4, "r", Token::Color),
+                        _ => self.make_identifier(3),
+                    },
                     Some('m') => self.make_keyword(3, "ponent", Token::Component),
                     Some('n') => self.make_keyword(3, "trol", Token::Control),
                     _ => self.make_identifier(2),
@@ -361,13 +365,19 @@ impl<'input> Iterator for Lexer<'input> {
             },
             'd' => self.make_keyword(1, "atabase", Token::Database),
             'e' => self.make_keyword(1, "ntity", Token::Entity),
+            'l' => self.make_keyword(1, "eftof", Token::LeftOf),
+            'n' => self.make_keyword(1, "ote", Token::Note),
             'o' => match chars.next() {
                 Some('v') => self.make_keyword(2, "erlay", Token::Overlay),
                 Some('-' | '<') => self.make_arrow(),
                 _ => self.make_identifier(1),
             },
             'q' => self.make_keyword(1, "ueue", Token::Queue),
-            'r' => self.make_keyword(1, "eturn", Token::Return),
+            'r' => match chars.next() {
+                Some('e') => self.make_keyword(2, "turn", Token::Return),
+                Some('i') => self.make_keyword(2, "ghtof", Token::RightOf),
+                _ => self.make_identifier(1),
+            },
             'x' => match chars.next() {
                 Some('-') => self.make_arrow(),
                 _ => self.make_identifier(1),
@@ -504,6 +514,10 @@ pub enum Token<'input> {
     Collections(Span),
     Queue(Span),
 
+    Color(Span),
+    LeftOf(Span),
+    RightOf(Span),
+
     Identifier(Span, &'input str),
 
     QuotedString(Span, Cow<'input, str>),
@@ -515,6 +529,7 @@ pub enum Token<'input> {
     As(Span),
     Return(Span),
     Overlay(Span),
+    Note(Span),
 
     LBracket(Span),
     RBracket(Span),
@@ -543,6 +558,9 @@ impl Token<'_> {
             | Token::Database(span)
             | Token::Collections(span)
             | Token::Queue(span)
+            | Token::Color(span)
+            | Token::LeftOf(span)
+            | Token::RightOf(span)
             | Token::Identifier(span, _)
             | Token::QuotedString(span, _)
             | Token::UnquotedString(span, _)
@@ -551,6 +569,7 @@ impl Token<'_> {
             | Token::As(span)
             | Token::Return(span)
             | Token::Overlay(span)
+            | Token::Note(span)
             | Token::LBracket(span)
             | Token::RBracket(span)
             | Token::LCurly(span)
@@ -575,6 +594,9 @@ impl Display for Token<'_> {
             Token::Database(_) => write!(f, "Database"),
             Token::Collections(_) => write!(f, "Collections"),
             Token::Queue(_) => write!(f, "Queue"),
+            Token::Color(_) => write!(f, "Color"),
+            Token::LeftOf(_) => write!(f, "LeftOf"),
+            Token::RightOf(_) => write!(f, "RightOf"),
             Token::Identifier(_, identifier) => write!(f, "Identifier: {identifier}"),
             Token::QuotedString(_, string) => write!(f, "QuotedString: {string}"),
             Token::UnquotedString(_, string) => write!(f, "UnquotedString: {string}"),
@@ -583,6 +605,7 @@ impl Display for Token<'_> {
             Token::As(_) => write!(f, "As"),
             Token::Return(_) => write!(f, "Return"),
             Token::Overlay(_) => write!(f, "Overlay"),
+            Token::Note(_) => write!(f, "Note"),
             Token::LBracket(_) => write!(f, "LBracket"),
             Token::RBracket(_) => write!(f, "RBracket"),
             Token::LCurly(_) => write!(f, "LCurly"),
@@ -686,6 +709,20 @@ mod tests {
     }
 
     #[test]
+    fn keyword_note() {
+        assert_token!(
+            "note^",
+            Token::Note(Span {
+                start: 0,
+                length: 4,
+                line: 0,
+                column: 0
+            }),
+            "^"
+        );
+    }
+
+    #[test]
     fn keyword_collections() {
         assert_token!(
             "collections^",
@@ -762,6 +799,48 @@ mod tests {
             Token::Queue(Span {
                 start: 0,
                 length: 5,
+                line: 0,
+                column: 0
+            }),
+            "^"
+        );
+    }
+
+    #[test]
+    fn keyword_color() {
+        assert_token!(
+            "color^",
+            Token::Color(Span {
+                start: 0,
+                length: 5,
+                line: 0,
+                column: 0
+            }),
+            "^"
+        );
+    }
+
+    #[test]
+    fn keyword_rightof() {
+        assert_token!(
+            "rightof^",
+            Token::RightOf(Span {
+                start: 0,
+                length: 7,
+                line: 0,
+                column: 0
+            }),
+            "^"
+        );
+    }
+
+    #[test]
+    fn keyword_leftof() {
+        assert_token!(
+            "leftof^",
+            Token::LeftOf(Span {
+                start: 0,
+                length: 6,
                 line: 0,
                 column: 0
             }),
@@ -934,6 +1013,41 @@ mod tests {
     }
 
     #[test]
+    fn quoted_string_with_escaped_chars() {
+        assert_token!(
+            "\" \\\" \\n \\t \\x \"^",
+            Token::QuotedString(
+                Span {
+                    start: 0,
+                    length: 15,
+                    line: 0,
+                    column: 0
+                },
+                Cow::Owned(" \" \n \t x ".to_string())
+            ),
+            "^"
+        );
+    }
+
+    #[test]
+    fn quoted_string_with_newline() {
+        assert_token!(
+            "\"
+\"^",
+            Token::QuotedString(
+                Span {
+                    start: 0,
+                    length: 3,
+                    line: 0,
+                    column: 0
+                },
+                Cow::Owned("\n".to_string())
+            ),
+            "^"
+        );
+    }
+
+    #[test]
     fn unquoted_string_newline_terminated() {
         let mut lexer = Lexer::new(" unquoted string\n^");
         let token = lexer.unquoted_string();
@@ -969,23 +1083,6 @@ mod tests {
             )
         );
         assert_eq!(lexer.remaining, "");
-    }
-
-    #[test]
-    fn quoted_string_with_escaped_chars() {
-        assert_token!(
-            "\" \\\" \\n \\t \\x \"^",
-            Token::QuotedString(
-                Span {
-                    start: 0,
-                    length: 15,
-                    line: 0,
-                    column: 0
-                },
-                Cow::Owned(" \" \n \t x ".to_string())
-            ),
-            "^"
-        );
     }
 
     #[test]

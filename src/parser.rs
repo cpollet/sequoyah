@@ -1,29 +1,30 @@
 use crate::ast::{
-    Activation, Attribute, Component, ComponentKind, Graph, Message, Overlay, Overlays, Value,
+    Activation, Attribute, Component, ComponentKind, Event, Events, Graph, Key, Message, Note,
+    Overlay, Overlays, Value,
 };
 use crate::lexer::{PeekableLexer, Token};
 use std::borrow::Cow;
 
 type Lexer<'input> = PeekableLexer<'input>;
-type TResult<T> = Result<T, String>;
+type Result<T> = std::result::Result<T, String>;
 
 impl Graph<'_> {
-    pub fn parse(input: &str) -> TResult<Graph<'_>> {
+    pub fn parse(input: &str) -> Result<Graph<'_>> {
         #[cfg(debug_assertions)]
         let mut lexer = Token::lexer(input).peekable();
         parse_graph(&mut lexer)
     }
 }
 
-fn parse_graph<'input>(lexer: &mut Lexer<'input>) -> TResult<Graph<'input>> {
+fn parse_graph<'input>(lexer: &mut Lexer<'input>) -> Result<Graph<'input>> {
     Ok(Graph {
         components: parse_components(lexer)?,
         overlays: parse_overlays(lexer)?,
-        messages: parse_messages(lexer)?,
+        events: parse_events(lexer)?,
     })
 }
 
-fn parse_components<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Component<'input>>> {
+fn parse_components<'input>(lexer: &mut Lexer<'input>) -> Result<Vec<Component<'input>>> {
     let mut components = Vec::new();
     while let Some(component) = parse_component(lexer)? {
         components.push(component);
@@ -31,7 +32,7 @@ fn parse_components<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Component<
     Ok(components)
 }
 
-fn parse_component<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Component<'input>>> {
+fn parse_component<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Component<'input>>> {
     let component_kind = match lexer.peek() {
         Some(Token::Component(_)) => ComponentKind::Component,
         Some(Token::Actor(_)) => ComponentKind::Actor,
@@ -71,7 +72,7 @@ fn parse_component<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Componen
 
 fn parse_name_and_identifier<'input>(
     lexer: &mut Lexer<'input>,
-) -> TResult<(Cow<'input, str>, &'input str)> {
+) -> Result<(Cow<'input, str>, &'input str)> {
     let (name, identifier) = match lexer.next() {
         Some(Token::Identifier(_, identifier)) => (Cow::Borrowed(identifier), Some(identifier)),
         Some(Token::QuotedString(_, string)) => (string, None),
@@ -113,15 +114,29 @@ fn parse_name_and_identifier<'input>(
     Ok((name, identifier))
 }
 
-fn parse_messages<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Message<'input>>> {
-    let mut messages = Vec::new();
-    while let Some(message) = parse_message(lexer)? {
-        messages.push(message);
+fn parse_events<'input>(lexer: &mut Lexer<'input>) -> Result<Events<'input>> {
+    let mut events = Vec::new();
+    while let Some(event) = parse_event(lexer)? {
+        events.push(event);
     }
-    Ok(messages)
+    Ok(events)
 }
 
-fn parse_message<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Message<'input>>> {
+fn parse_event<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Event<'input>>> {
+    Ok(match lexer.peek() {
+        Some(Token::Identifier(..)) => parse_message(lexer)?.map(Event::Message),
+        Some(Token::Note(..)) => parse_note(lexer)?.map(Event::Note),
+        Some(token) => {
+            return Err(format!(
+                "Expected identifier or Note, got {token} at {span}",
+                span = token.span()
+            ));
+        }
+        None => None,
+    })
+}
+
+fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Message<'input>>> {
     let Some(from) = parse_identifier(lexer)? else {
         return Ok(None);
     };
@@ -175,7 +190,7 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Message<'i
     }))
 }
 
-fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<&'input str>> {
+fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> Result<Option<&'input str>> {
     match lexer.next() {
         None => Ok(None),
         Some(Token::Identifier(_, identifier)) => Ok(Some(identifier)),
@@ -186,7 +201,7 @@ fn parse_identifier<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<&'input
     }
 }
 
-fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Attribute<'input>>> {
+fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> Result<Vec<Attribute<'input>>> {
     let mut attributes = Vec::new();
     if lexer
         .next_if(|token| matches!(token, Token::LBracket(_)))
@@ -197,11 +212,13 @@ fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> TResult<Vec<Attribute<
             if let Some(token) = lexer.next() {
                 let key = match token {
                     Token::RBracket(_) => break,
-                    Token::Identifier(_, identifier) if can_parse_new_attribute => identifier,
+                    Token::Color(_) if can_parse_new_attribute => Key::Color,
+                    Token::LeftOf(_) if can_parse_new_attribute => Key::LeftOf,
+                    Token::RightOf(_) if can_parse_new_attribute => Key::RightOf,
                     token => {
                         if can_parse_new_attribute {
                             return Err(format!(
-                                "Expected identifier, got {token} at {span}",
+                                "Expected Color, LeftOf, RightOf, got {token} at {span}",
                                 span = token.span()
                             ));
                         }
@@ -262,12 +279,12 @@ fn parse_message_text<'input>(lexer: &mut Lexer<'input>) -> Option<Cow<'input, s
         })
 }
 
-fn parse_activation<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Activation<'input>>> {
+fn parse_activation<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Activation<'input>>> {
     if lexer
         .next_if(|token| matches!(token, Token::LCurly(_)))
         .is_some()
     {
-        let mut messages = Vec::new();
+        let mut events = Vec::new();
         let ret_val = loop {
             if lexer
                 .next_if(|token| matches!(token, Token::RCurly(_)))
@@ -296,23 +313,49 @@ fn parse_activation<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Activat
                     None => return Err("Expected RCurly, got end of input".into()),
                 }
             }
-            match parse_message(lexer)? {
-                Some(message) => messages.push(message),
+            match parse_event(lexer)? {
+                Some(event) => events.push(event),
                 None => {
                     return Err(
-                        "Expected RCurly, Return or identifier, got end of input".to_string()
+                        "Expected RCurly, Return, Note or identifier, got end of input".to_string(),
                     );
                 }
             }
         };
 
-        Ok(Some(Activation { messages, ret_val }))
+        Ok(Some(Activation { events, ret_val }))
     } else {
         Ok(None)
     }
 }
 
-fn parse_overlays<'input>(lexer: &mut Lexer<'input>) -> TResult<Overlays<'input>> {
+fn parse_note<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Note<'input>>> {
+    if lexer
+        .next_if(|token| matches!(token, Token::Note(_)))
+        .is_none()
+    {
+        return Ok(None);
+    }
+
+    let attributes = parse_attributes(lexer)?;
+
+    let text = match lexer.next() {
+        Some(Token::Colon(_)) => todo!(),
+        Some(Token::QuotedString(_, str)) => str,
+        Some(Token::LCurly(_)) => todo!(),
+        Some(token) => {
+            return Err(format!(
+                "Expected Colon, QuotedString, LCurly, got {token} at {span}",
+                span = token.span()
+            ));
+        }
+        None => return Err("Expected Colon, QuotedString, LCurly, got end of input".into()),
+    };
+
+    Ok(Some(Note { text, attributes }))
+}
+
+fn parse_overlays<'input>(lexer: &mut Lexer<'input>) -> Result<Overlays<'input>> {
     let mut overlays = Overlays::new();
     while let Some(overlay) = parse_overlay(lexer)? {
         overlays.push(overlay);
@@ -320,7 +363,7 @@ fn parse_overlays<'input>(lexer: &mut Lexer<'input>) -> TResult<Overlays<'input>
     Ok(overlays)
 }
 
-fn parse_overlay<'input>(lexer: &mut Lexer<'input>) -> TResult<Option<Overlay<'input>>> {
+fn parse_overlay<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Overlay<'input>>> {
     if lexer
         .next_if(|token| matches!(token, Token::Overlay(_)))
         .is_none()
