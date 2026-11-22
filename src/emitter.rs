@@ -201,6 +201,7 @@ pub mod plantuml {
     impl Emitter for &mut PlantUml {
         fn emit_graph(self, graph: &Graph<'_>) {
             self.output += "@startuml\n";
+            self.output += "autonumber\n\n";
 
             for component in &graph.components {
                 self.emit_component(component);
