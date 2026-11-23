@@ -352,11 +352,7 @@ impl<'input> Iterator for Lexer<'input> {
             'b' => self.make_keyword(1, "oundary", Token::Boundary),
             'c' => match chars.next() {
                 Some('o') => match chars.next() {
-                    Some('l') => match chars.next() {
-                        Some('l') => self.make_keyword(4, "ections", Token::Collections),
-                        Some('o') => self.make_keyword(4, "r", Token::Color),
-                        _ => self.make_identifier(3),
-                    },
+                    Some('l') => self.make_keyword(3, "lections", Token::Collections),
                     Some('m') => self.make_keyword(3, "ponent", Token::Component),
                     Some('n') => self.make_keyword(3, "trol", Token::Control),
                     _ => self.make_identifier(2),
@@ -365,7 +361,6 @@ impl<'input> Iterator for Lexer<'input> {
             },
             'd' => self.make_keyword(1, "atabase", Token::Database),
             'e' => self.make_keyword(1, "ntity", Token::Entity),
-            'l' => self.make_keyword(1, "eftof", Token::LeftOf),
             'n' => self.make_keyword(1, "ote", Token::Note),
             'o' => match chars.next() {
                 Some('v') => self.make_keyword(2, "erlay", Token::Overlay),
@@ -373,11 +368,7 @@ impl<'input> Iterator for Lexer<'input> {
                 _ => self.make_identifier(1),
             },
             'q' => self.make_keyword(1, "ueue", Token::Queue),
-            'r' => match chars.next() {
-                Some('e') => self.make_keyword(2, "turn", Token::Return),
-                Some('i') => self.make_keyword(2, "ghtof", Token::RightOf),
-                _ => self.make_identifier(1),
-            },
+            'r' => self.make_keyword(1, "eturn", Token::Return),
             'x' => match chars.next() {
                 Some('-') => self.make_arrow(),
                 _ => self.make_identifier(1),
@@ -514,10 +505,6 @@ pub enum Token<'input> {
     Collections(Span),
     Queue(Span),
 
-    Color(Span),
-    LeftOf(Span),
-    RightOf(Span),
-
     Identifier(Span, &'input str),
 
     QuotedString(Span, Cow<'input, str>),
@@ -558,9 +545,6 @@ impl Token<'_> {
             | Token::Database(span)
             | Token::Collections(span)
             | Token::Queue(span)
-            | Token::Color(span)
-            | Token::LeftOf(span)
-            | Token::RightOf(span)
             | Token::Identifier(span, _)
             | Token::QuotedString(span, _)
             | Token::UnquotedString(span, _)
@@ -594,9 +578,6 @@ impl Display for Token<'_> {
             Token::Database(_) => write!(f, "Database"),
             Token::Collections(_) => write!(f, "Collections"),
             Token::Queue(_) => write!(f, "Queue"),
-            Token::Color(_) => write!(f, "Color"),
-            Token::LeftOf(_) => write!(f, "LeftOf"),
-            Token::RightOf(_) => write!(f, "RightOf"),
             Token::Identifier(_, identifier) => write!(f, "Identifier: {identifier}"),
             Token::QuotedString(_, string) => write!(f, "QuotedString: {string}"),
             Token::UnquotedString(_, string) => write!(f, "UnquotedString: {string}"),
@@ -799,48 +780,6 @@ mod tests {
             Token::Queue(Span {
                 start: 0,
                 length: 5,
-                line: 0,
-                column: 0
-            }),
-            "^"
-        );
-    }
-
-    #[test]
-    fn keyword_color() {
-        assert_token!(
-            "color^",
-            Token::Color(Span {
-                start: 0,
-                length: 5,
-                line: 0,
-                column: 0
-            }),
-            "^"
-        );
-    }
-
-    #[test]
-    fn keyword_rightof() {
-        assert_token!(
-            "rightof^",
-            Token::RightOf(Span {
-                start: 0,
-                length: 7,
-                line: 0,
-                column: 0
-            }),
-            "^"
-        );
-    }
-
-    #[test]
-    fn keyword_leftof() {
-        assert_token!(
-            "leftof^",
-            Token::LeftOf(Span {
-                start: 0,
-                length: 6,
                 line: 0,
                 column: 0
             }),

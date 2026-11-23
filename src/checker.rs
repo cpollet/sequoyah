@@ -166,11 +166,7 @@ where
     let val = extractor(attributes)?;
 
     if let Some(key) = attributes.keys().next() {
-        return match key {
-            ast::Key::Color => Err("Invalid attribute color".to_string()),
-            ast::Key::LeftOf => Err("Invalid attribute leftof".to_string()),
-            ast::Key::RightOf => Err("Invalid attribute rightof".to_string()),
-        };
+        return Err(format!("Invalid attribute {key}"));
     }
 
     Ok(val)
@@ -179,7 +175,7 @@ where
 fn extract_color<'input>(
     attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
 ) -> Result<Option<&'input str>> {
-    match attributes.remove(&ast::Key::Color) {
+    match attributes.remove("color") {
         Some(value) => match value {
             ast::Value::Identifier(identifier) => match crate::colors::COLORS.get(identifier) {
                 Some(color) => Ok(Some(color)),
@@ -195,7 +191,7 @@ fn extract_color<'input>(
 fn extract_position<'input>(
     attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
 ) -> Result<Option<ir::Position<'input>>> {
-    let leftof = match attributes.remove(&ast::Key::LeftOf) {
+    let leftof = match attributes.remove("leftof") {
         Some(value) => match value {
             ast::Value::Identifier(identifier) => Some(ir::Position::LeftOf(identifier)),
             ast::Value::Quoted(_) => {
@@ -208,7 +204,7 @@ fn extract_position<'input>(
         None => None,
     };
 
-    let rightof = match attributes.remove(&ast::Key::RightOf) {
+    let rightof = match attributes.remove("rightof") {
         Some(value) => match value {
             ast::Value::Identifier(identifier) => Some(ir::Position::RightOf(identifier)),
             ast::Value::Quoted(_) => {

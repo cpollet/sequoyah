@@ -1,6 +1,6 @@
 use crate::ast::{
-    Activation, Attribute, Component, ComponentKind, Event, Events, Graph, Key, Message, Note,
-    Overlay, Overlays, Value,
+    Activation, Attribute, Component, ComponentKind, Event, Events, Graph, Message, Note, Overlay,
+    Overlays, Value,
 };
 use crate::lexer::{PeekableLexer, Token};
 use std::borrow::Cow;
@@ -212,13 +212,11 @@ fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> Result<Vec<Attribute<'
             if let Some(token) = lexer.next() {
                 let key = match token {
                     Token::RBracket(_) => break,
-                    Token::Color(_) if can_parse_new_attribute => Key::Color,
-                    Token::LeftOf(_) if can_parse_new_attribute => Key::LeftOf,
-                    Token::RightOf(_) if can_parse_new_attribute => Key::RightOf,
+                    Token::Identifier(_, identifier) if can_parse_new_attribute => identifier,
                     token => {
                         if can_parse_new_attribute {
                             return Err(format!(
-                                "Expected Color, LeftOf, RightOf, got {token} at {span}",
+                                "Expected identifier, got {token} at {span}",
                                 span = token.span()
                             ));
                         }

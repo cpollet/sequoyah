@@ -98,26 +98,26 @@ pub enum ArrowDirection {
 #[allow(unused)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Attribute<'input> {
-    pub key: Key,
+    pub key: Key<'input>,
     pub value: Value<'input>,
 }
 
 pub type Attributes<'input> = Vec<Attribute<'input>>;
 
-impl<'input> From<Attribute<'input>> for (Key, Value<'input>) {
+impl<'input> From<Attribute<'input>> for (Key<'input>, Value<'input>) {
     fn from(value: Attribute<'input>) -> Self {
         (value.key, value.value)
     }
 }
 
-impl<'a, 'input> From<&'a Attribute<'input>> for (Key, &'a Value<'input>) {
+impl<'a, 'input> From<&'a Attribute<'input>> for (Key<'input>, &'a Value<'input>) {
     fn from(value: &'a Attribute<'input>) -> Self {
         (value.key, &value.value)
     }
 }
 
-impl<'input> From<(Key, Value<'input>)> for Attribute<'input> {
-    fn from(value: (Key, Value<'input>)) -> Self {
+impl<'input> From<(Key<'input>, Value<'input>)> for Attribute<'input> {
+    fn from(value: (Key<'input>, Value<'input>)) -> Self {
         Attribute {
             key: value.0,
             value: value.1,
@@ -125,13 +125,7 @@ impl<'input> From<(Key, Value<'input>)> for Attribute<'input> {
     }
 }
 
-#[allow(unused)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Key {
-    Color,
-    LeftOf,
-    RightOf,
-}
+pub type Key<'input> = &'input str;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Value<'input> {
