@@ -132,6 +132,7 @@ pub enum Value<'input> {
     Identifier(&'input str),
     Quoted(Cow<'input, str>),
     HexColor(&'input str),
+    Boolean(bool),
 }
 
 #[allow(unused)]

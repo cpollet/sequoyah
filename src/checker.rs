@@ -183,6 +183,7 @@ fn extract_color<'input>(
             },
             ast::Value::HexColor(hcolor) => Ok(Some(hcolor)),
             ast::Value::Quoted(_) => Err("Attribute color cannot be a string".to_string()),
+            ast::Value::Boolean(_) => Err("Attribute color cannot be a boolean".to_string()),
         },
         None => Ok(None),
     }
@@ -191,35 +192,65 @@ fn extract_color<'input>(
 fn extract_position<'input>(
     attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
 ) -> Result<Option<ir::Position<'input>>> {
-    let leftof = match attributes.remove("leftof") {
-        Some(value) => match value {
-            ast::Value::Identifier(identifier) => Some(ir::Position::LeftOf(identifier)),
-            ast::Value::Quoted(_) => {
-                return Err("Attribute leftof cannot be a string".to_string());
-            }
-            ast::Value::HexColor(_) => {
-                return Err("Attribute leftof cannot be an hexcolor".to_string());
-            }
-        },
-        None => None,
-    };
+    let mut position = None;
 
-    let rightof = match attributes.remove("rightof") {
-        Some(value) => match value {
-            ast::Value::Identifier(identifier) => Some(ir::Position::RightOf(identifier)),
-            ast::Value::Quoted(_) => {
-                return Err("Attribute rightof cannot be a string".to_string());
-            }
-            ast::Value::HexColor(_) => {
-                return Err("Attribute rightof cannot be an hexcolor".to_string());
-            }
-        },
-        None => None,
-    };
+    for (attribute, mapper) in [
+        ("leftof", Box::new(|v| ir::Position::LeftOf(v))),
+        ("rightof", Box::new(|v| ir::Position::RightOf(v))),
+    ] as [(&str, Box<dyn Fn(&str) -> ir::Position>); 2]
+    {
+        let new_position = match attributes.remove(attribute) {
+            Some(value) => match value {
+                ast::Value::Identifier(identifier) => Some(mapper(identifier)),
+                ast::Value::Quoted(_) => {
+                    return Err(format!("Attribute {attribute} cannot be a string"));
+                }
+                ast::Value::HexColor(_) => {
+                    return Err(format!("Attribute {attribute} cannot be an hexcolor"));
+                }
+                ast::Value::Boolean(_) => {
+                    return Err(format!("Attribute {attribute} cannot be a boolean"));
+                }
+            },
+            None => None,
+        };
 
-    if leftof.is_some() && rightof.is_some() {
-        return Err("Cannot set both leftof and rightof attributes".to_string());
+        if let Some(new_position) = new_position {
+            if position.is_some() {
+                return Err(format!(
+                    "Cannot set {attribute}, another position attribute already defined"
+                ));
+            }
+            position = Some(new_position);
+        }
     }
 
-    Ok(leftof.or(rightof))
+    for (attribute, ir_position) in [("left", ir::Position::Left), ("right", ir::Position::Right)] {
+        let new_position = match attributes.remove(attribute) {
+            Some(value) => match value {
+                ast::Value::Identifier(_) => {
+                    return Err(format!("Attribute {attribute} cannot be an identifier"));
+                }
+                ast::Value::Quoted(_) => {
+                    return Err(format!("Attribute {attribute} cannot be a string"));
+                }
+                ast::Value::HexColor(_) => {
+                    return Err(format!("Attribute {attribute} cannot be an hexcolor"));
+                }
+                ast::Value::Boolean(_) => Some(ir_position),
+            },
+            None => None,
+        };
+
+        if let Some(new_position) = new_position {
+            if position.is_some() {
+                return Err(format!(
+                    "Cannot set {attribute}, another position attribute already defined"
+                ));
+            }
+            position = Some(new_position);
+        }
+    }
+
+    Ok(position)
 }

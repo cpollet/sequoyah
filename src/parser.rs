@@ -227,28 +227,24 @@ fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> Result<Vec<Attribute<'
                     }
                 };
 
-                match lexer.next() {
-                    Some(Token::Equal(_)) => (),
-                    Some(token) => {
-                        return Err(format!(
-                            "Expected Equal, got {token} at {span}",
-                            span = token.span()
-                        ));
+                let value = if lexer
+                    .next_if(|token| matches!(token, Token::Equal(_)))
+                    .is_some()
+                {
+                    match lexer.next() {
+                        Some(Token::QuotedString(_, string)) => Value::Quoted(string),
+                        Some(Token::HexColor(_, color)) => Value::HexColor(color),
+                        Some(Token::Identifier(_, identifier)) => Value::Identifier(identifier),
+                        Some(token) => {
+                            return Err(format!(
+                                "Expected Color, got {token} at {span}",
+                                span = token.span()
+                            ));
+                        }
+                        None => return Err("Expected Color, got end of input".into()),
                     }
-                    None => return Err("Expected Equal, got end of input".into()),
-                }
-
-                let value = match lexer.next() {
-                    Some(Token::QuotedString(_, string)) => Value::Quoted(string),
-                    Some(Token::HexColor(_, color)) => Value::HexColor(color),
-                    Some(Token::Identifier(_, identifier)) => Value::Identifier(identifier),
-                    Some(token) => {
-                        return Err(format!(
-                            "Expected Color, got {token} at {span}",
-                            span = token.span()
-                        ));
-                    }
-                    None => return Err("Expected Color, got end of input".into()),
+                } else {
+                    Value::Boolean(true)
                 };
 
                 can_parse_new_attribute = lexer
