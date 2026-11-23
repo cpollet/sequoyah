@@ -193,20 +193,22 @@ pub mod plantuml {
         fn emit_note(&mut self, note: &Note) {
             self.output += "note ";
             match note.position {
-                None | Some(Position::Across) => self.output += "across\n",
-                Some(Position::Left) => self.output += "left\n",
+                None | Some(Position::Across) => self.output += "across",
+                Some(Position::Left) => self.output += "left",
                 Some(Position::LeftOf(component)) => {
                     self.output += "left of ";
                     self.output += component;
-                    self.output += "\n";
                 }
-                Some(Position::Right) => self.output += "right\n",
+                Some(Position::Right) => self.output += "right",
                 Some(Position::RightOf(component)) => {
                     self.output += "right of ";
                     self.output += component;
-                    self.output += "\n";
                 }
             }
+            if let Some(color) = note.color {
+                self.output += color;
+            }
+            self.output += "\n";
             self.output += note.text.as_ref();
             if !note.text.ends_with('\n') {
                 self.output += "\n";

@@ -6,12 +6,14 @@ overlay component "backend" as be [color=lightblue] : s d;
 
 b -x s [color=#ff0000, ] : GET /path "lol"\n2nd line {}
 {
+    s -> d [color=blue] : SELECT
+    note [left] "text on the left"
     s ->o d [color=blue] : SELECT
     {
         note [left] "text on the left"
         note [right] "text on the right"
         d <- d [color=green] : ok
-        note [leftof=d] "text"
+        note [leftof=d, color=olive] "text"
         return [color=orange] : ok
     }
     note "across"

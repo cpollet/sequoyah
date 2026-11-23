@@ -161,7 +161,7 @@ fn no_other<'input, F, T>(
     extractor: F,
 ) -> Result<T>
 where
-    F: FnOnce(&mut HashMap<ast::Key, ast::Value<'input>>) -> Result<T> + 'input,
+    F: Fn(&mut HashMap<ast::Key, ast::Value<'input>>) -> Result<T> + 'input,
 {
     let val = extractor(attributes)?;
 
@@ -193,6 +193,11 @@ fn extract_position<'input>(
     attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
 ) -> Result<Option<ir::Position<'input>>> {
     let mut position = None;
+
+    // todo implement across with a list of identifiers
+    // todo implement rnote, hnote
+    // todo implement aligned notes (/)
+    // todo implement formatting (markdown?)
 
     for (attribute, mapper) in [
         ("leftof", Box::new(|v| ir::Position::LeftOf(v))),

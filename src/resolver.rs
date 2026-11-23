@@ -144,13 +144,12 @@ fn resolve_note<'input>(
     note: Note<'input>,
     component_map: &HashMap<&'input str, &'input str>,
 ) -> Option<Note<'input>> {
+    // todo think about left and right when the message is not rendered
     match &note.position {
-        Some(Position::LeftOf(identifier) | Position::RightOf(identifier)) => {
-            if component_map.contains_key(identifier) {
-                None
-            } else {
-                Some(note)
-            }
+        Some(Position::LeftOf(identifier) | Position::RightOf(identifier))
+            if component_map.contains_key(identifier) =>
+        {
+            None
         }
         _ => Some(note),
     }
