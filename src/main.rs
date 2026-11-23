@@ -14,6 +14,7 @@ mod checker;
 mod cli;
 mod colors;
 mod emitter;
+mod ir;
 mod lexer;
 mod parser;
 mod resolver;

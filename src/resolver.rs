@@ -1,5 +1,5 @@
-use crate::ast::{
-    Activation, Component, Components, Event, Graph, Key, Message, Note, Overlay, Overlays, Value,
+use crate::ir::{
+    Activation, Component, Components, Event, Graph, Message, Note, Overlay, Overlays, Position,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -144,18 +144,16 @@ fn resolve_note<'input>(
     note: Note<'input>,
     component_map: &HashMap<&'input str, &'input str>,
 ) -> Option<Note<'input>> {
-    if let Some(ref_component) = note.attributes.iter().find_map(|attr| match attr.key {
-        Key::Color => None,
-        Key::LeftOf | Key::RightOf => Some(match attr.value {
-            Value::Identifier(identifier) => identifier,
-            Value::Quoted(_) | Value::HexColor(_) => unreachable!(),
-        }),
-    }) && component_map.contains_key(ref_component)
-    {
-        return None;
+    match &note.position {
+        Some(Position::LeftOf(identifier) | Position::RightOf(identifier)) => {
+            if component_map.contains_key(identifier) {
+                None
+            } else {
+                Some(note)
+            }
+        }
+        _ => Some(note),
     }
-
-    Some(note)
 }
 
 impl<'input> From<Overlay<'input>> for Component<'input> {
@@ -164,7 +162,7 @@ impl<'input> From<Overlay<'input>> for Component<'input> {
             kind: value.kind,
             name: value.name,
             identifier: value.identifier,
-            attributes: value.attributes,
+            color: value.color,
         }
     }
 }

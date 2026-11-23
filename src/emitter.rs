@@ -1,4 +1,4 @@
-use crate::ast::Graph;
+use crate::ir::Graph;
 
 trait Emit {
     fn emit<E>(&self, emitter: E)
@@ -20,11 +20,11 @@ trait Emitter {
 }
 
 pub mod plantuml {
-    use crate::ast::{
-        Arrow, ArrowBody, ArrowDirection, ArrowHead, Attribute, Component, ComponentKind, Event,
-        Graph, Key, Message, Note, Value,
-    };
     use crate::emitter::{Emit, Emitter};
+    use crate::ir::{
+        Arrow, ArrowBody, ArrowDirection, ArrowHead, Component, ComponentKind, Event, Graph,
+        Message, Note, Position,
+    };
     use std::fmt::Write;
 
     pub fn emit(graph: &Graph) -> String {
@@ -59,7 +59,7 @@ pub mod plantuml {
             self.output += " as ";
             self.output += component.identifier;
 
-            if let Some(color) = Self::extract_color(&component.attributes) {
+            if let Some(color) = component.color {
                 self.output += " ";
                 self.output += color;
             }
@@ -76,7 +76,7 @@ pub mod plantuml {
 
         fn emit_message(&mut self, message: &Message) {
             self.output += message.from;
-            self.emit_arrow(&message.arrow, Self::extract_color(&message.attributes));
+            self.emit_arrow(&message.arrow, message.color);
             self.output += message.to;
 
             if let Some(message) = message.text.as_ref() {
@@ -95,7 +95,7 @@ pub mod plantuml {
                     self.emit_event(event);
                 }
 
-                if let Some((attributes, ret_val)) = activation.ret_val.as_ref() {
+                if let Some(ret_val) = activation.ret_val.as_ref() {
                     self.output += message.from;
                     self.emit_arrow(
                         &Arrow {
@@ -105,11 +105,11 @@ pub mod plantuml {
                             right_head: ArrowHead::None,
                             right_dot: false,
                         },
-                        Self::extract_color(attributes),
+                        ret_val.color,
                     );
                     self.output += message.to;
                     self.output += " : ";
-                    self.output += ret_val;
+                    self.output += ret_val.text.as_ref();
                     self.output += "\n";
                 }
                 self.output += "deactivate";
@@ -191,23 +191,17 @@ pub mod plantuml {
         }
 
         fn emit_note(&mut self, note: &Note) {
-            let pos = note
-                .attributes
-                .iter()
-                .find_map(NotePosition::opt_from)
-                .unwrap_or_default();
-
             self.output += "note ";
-            match pos {
-                NotePosition::Across => self.output += "across\n",
-                NotePosition::Left => self.output += "left\n",
-                NotePosition::LeftOf(component) => {
+            match note.position {
+                None | Some(Position::Across) => self.output += "across\n",
+                Some(Position::Left) => self.output += "left\n",
+                Some(Position::LeftOf(component)) => {
                     self.output += "left of ";
                     self.output += component;
                     self.output += "\n";
                 }
-                NotePosition::Right => self.output += "right\n",
-                NotePosition::RightOf(component) => {
+                Some(Position::Right) => self.output += "right\n",
+                Some(Position::RightOf(component)) => {
                     self.output += "right of ";
                     self.output += component;
                     self.output += "\n";
@@ -218,20 +212,6 @@ pub mod plantuml {
                 self.output += "\n";
             }
             self.output += "end note\n";
-        }
-
-        fn extract_color<'a>(attributes: &'a [Attribute]) -> Option<&'a str> {
-            // todo error reporting on invalid quoted color and on invalid color name (identifier)
-            // todo parse quoted color as either an identifier or an hexcolor
-            attributes
-                .iter()
-                .find(|a| matches!(a.key, Key::Color))
-                .map(|a| &a.value)
-                .and_then(|v| match v {
-                    Value::Identifier(identifier) => crate::colors::COLORS.get(identifier).copied(),
-                    Value::Quoted(val) => Some(val.as_ref()),
-                    Value::HexColor(color) => Some(*color),
-                })
         }
     }
 
@@ -250,35 +230,6 @@ pub mod plantuml {
             }
 
             self.output += "@enduml\n";
-        }
-    }
-
-    #[derive(Debug, Default)]
-    enum NotePosition<'input> {
-        #[default]
-        Across,
-        Left,
-        LeftOf(&'input str),
-        Right,
-        RightOf(&'input str),
-    }
-
-    impl<'input> NotePosition<'input> {
-        fn opt_from(attribute: &Attribute<'input>) -> Option<Self> {
-            match attribute.key {
-                //"left" => Some(Self::Left),
-                Key::LeftOf => match attribute.value {
-                    Value::Identifier(identifier) => Some(Self::LeftOf(identifier)),
-                    Value::Quoted(_) | Value::HexColor(_) => None,
-                },
-                //"right" => Some(Self::Right),
-                Key::RightOf => match attribute.value {
-                    Value::Identifier(identifier) => Some(Self::LeftOf(identifier)),
-                    Value::Quoted(_) | Value::HexColor(_) => None,
-                },
-                //Key::Across => Some(Self::Across),
-                Key::Color => None,
-            }
         }
     }
 }

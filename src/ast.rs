@@ -5,7 +5,7 @@ use std::borrow::Cow;
 pub struct Graph<'input> {
     pub components: Components<'input>,
     pub overlays: Overlays<'input>,
-    pub events: Vec<Event<'input>>,
+    pub events: Events<'input>,
 }
 
 #[allow(unused)]
