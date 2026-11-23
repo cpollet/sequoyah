@@ -1,5 +1,6 @@
 use crate::{ast, ir};
 use indexmap::IndexMap;
+use std::collections::HashMap;
 
 type Error = String;
 type Result<T> = std::result::Result<T, Error>;
@@ -54,35 +55,13 @@ impl<'input> TryFrom<ast::Component<'input>> for ir::Component<'input> {
     type Error = Error;
 
     fn try_from(value: ast::Component<'input>) -> std::result::Result<Self, Self::Error> {
-        let mut color = None;
-
-        for attribute in value.attributes {
-            match &attribute.key {
-                ast::Key::Color => match attribute.value {
-                    // todo error reporting on invalid quoted color and on invalid color name (identifier)
-                    // todo parse quoted color as either an identifier or an hexcolor
-                    ast::Value::Identifier(identifier) => {
-                        color = crate::colors::COLORS.get(identifier).copied();
-                    }
-                    ast::Value::Quoted(_) => {
-                        return Err("Attribute color cannot be a string".to_string());
-                    }
-                    ast::Value::HexColor(hcolor) => color = Some(hcolor),
-                },
-                ast::Key::LeftOf => {
-                    return Err("Attribute leftof not supported on component".to_string());
-                }
-                ast::Key::RightOf => {
-                    return Err("Attribute rightof not supported on component".to_string());
-                }
-            }
-        }
+        let mut attributes = into_map(value.attributes);
 
         Ok(ir::Component {
             kind: value.kind,
             name: value.name,
             identifier: value.identifier,
-            color,
+            color: no_other(&mut attributes, extract_color)?,
         })
     }
 }
@@ -102,34 +81,14 @@ impl<'input> TryFrom<ast::Message<'input>> for ir::Message<'input> {
     type Error = Error;
 
     fn try_from(value: ast::Message<'input>) -> std::result::Result<Self, Self::Error> {
-        let mut color = None;
-
-        for attribute in value.attributes {
-            match &attribute.key {
-                ast::Key::Color => match attribute.value {
-                    ast::Value::Identifier(identifier) => {
-                        color = crate::colors::COLORS.get(identifier).copied();
-                    }
-                    ast::Value::Quoted(_) => {
-                        return Err("Attribute color cannot be a string".to_string());
-                    }
-                    ast::Value::HexColor(hcolor) => color = Some(hcolor),
-                },
-                ast::Key::LeftOf => {
-                    return Err("Attribute leftof not supported on component".to_string());
-                }
-                ast::Key::RightOf => {
-                    return Err("Attribute rightof not supported on component".to_string());
-                }
-            }
-        }
+        let mut attributes = into_map(value.attributes);
 
         Ok(ir::Message {
             from: value.from,
             arrow: value.arrow,
             to: value.to,
             text: value.text,
-            color,
+            color: no_other(&mut attributes, extract_color)?,
             activation: value.activation.map(ir::Activation::try_from).transpose()?,
         })
     }
@@ -141,28 +100,12 @@ impl<'input> TryFrom<ast::Activation<'input>> for ir::Activation<'input> {
     fn try_from(value: ast::Activation<'input>) -> std::result::Result<Self, Self::Error> {
         let ret_val = match value.ret_val {
             Some((attributes, text)) => {
-                let mut color = None;
+                let mut attributes = into_map(attributes);
 
-                for attribute in attributes {
-                    match &attribute.key {
-                        ast::Key::Color => match attribute.value {
-                            ast::Value::Identifier(identifier) => {
-                                color = crate::colors::COLORS.get(identifier).copied();
-                            }
-                            ast::Value::Quoted(_) => {
-                                return Err("Attribute color cannot be a string".to_string());
-                            }
-                            ast::Value::HexColor(hcolor) => color = Some(hcolor),
-                        },
-                        ast::Key::LeftOf => {
-                            return Err("Attribute leftof not supported on component".to_string());
-                        }
-                        ast::Key::RightOf => {
-                            return Err("Attribute rightof not supported on component".to_string());
-                        }
-                    }
-                }
-                Some(ir::RetVal { color, text })
+                Some(ir::RetVal {
+                    color: no_other(&mut attributes, extract_color)?,
+                    text,
+                })
             }
             None => None,
         };
@@ -180,49 +123,12 @@ impl<'input> TryFrom<ast::Note<'input>> for ir::Note<'input> {
     type Error = Error;
 
     fn try_from(value: ast::Note<'input>) -> std::result::Result<Self, Self::Error> {
-        let mut color = None;
-        let mut position = None;
-
-        for attribute in value.attributes {
-            match &attribute.key {
-                ast::Key::Color => match attribute.value {
-                    ast::Value::Identifier(identifier) => {
-                        color = crate::colors::COLORS.get(identifier).copied();
-                    }
-                    ast::Value::Quoted(_) => {
-                        return Err("Attribute color cannot be a string".to_string());
-                    }
-                    ast::Value::HexColor(hcolor) => color = Some(hcolor),
-                },
-                ast::Key::LeftOf => match attribute.value {
-                    ast::Value::Identifier(identifier) => {
-                        position = Some(ir::Position::LeftOf(identifier));
-                    }
-                    ast::Value::Quoted(_) => {
-                        return Err("Attribute leftof cannot be a string".to_string());
-                    }
-                    ast::Value::HexColor(_) => {
-                        return Err("Attribute leftof cannot be an hexcolor".to_string());
-                    }
-                },
-                ast::Key::RightOf => match attribute.value {
-                    ast::Value::Identifier(identifier) => {
-                        position = Some(ir::Position::RightOf(identifier));
-                    }
-                    ast::Value::Quoted(_) => {
-                        return Err("Attribute rightof cannot be a string".to_string());
-                    }
-                    ast::Value::HexColor(_) => {
-                        return Err("Attribute rightof cannot be an hexcolor".to_string());
-                    }
-                },
-            }
-        }
+        let mut attributes = into_map(value.attributes);
 
         Ok(ir::Note {
             text: value.text,
-            color,
-            position,
+            color: extract_color(&mut attributes)?,
+            position: no_other(&mut attributes, extract_position)?,
         })
     }
 }
@@ -231,34 +137,93 @@ impl<'input> TryFrom<ast::Overlay<'input>> for ir::Overlay<'input> {
     type Error = Error;
 
     fn try_from(value: ast::Overlay<'input>) -> std::result::Result<Self, Self::Error> {
-        let mut color = None;
-
-        for attribute in value.attributes {
-            match &attribute.key {
-                ast::Key::Color => match attribute.value {
-                    ast::Value::Identifier(identifier) => {
-                        color = crate::colors::COLORS.get(identifier).copied();
-                    }
-                    ast::Value::Quoted(_) => {
-                        return Err("Attribute color cannot be a string".to_string());
-                    }
-                    ast::Value::HexColor(hcolor) => color = Some(hcolor),
-                },
-                ast::Key::LeftOf => {
-                    return Err("Attribute leftof not supported on overlay".to_string());
-                }
-                ast::Key::RightOf => {
-                    return Err("Attribute rightof not supported on overlay".to_string());
-                }
-            }
-        }
+        let mut attributes = into_map(value.attributes);
 
         Ok(ir::Overlay {
             kind: value.kind,
             name: value.name,
             identifier: value.identifier,
             components: value.components,
-            color,
+            color: no_other(&mut attributes, extract_color)?,
         })
     }
+}
+
+fn into_map(attributes: ast::Attributes) -> HashMap<ast::Key, ast::Value> {
+    attributes
+        .into_iter()
+        .map(|attribute| (attribute.key, attribute.value))
+        .collect()
+}
+
+fn no_other<'input, F, T>(
+    attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
+    extractor: F,
+) -> Result<T>
+where
+    F: FnOnce(&mut HashMap<ast::Key, ast::Value<'input>>) -> Result<T> + 'input,
+{
+    let val = extractor(attributes)?;
+
+    if let Some(key) = attributes.keys().next() {
+        return match key {
+            ast::Key::Color => Err("Invalid attribute color".to_string()),
+            ast::Key::LeftOf => Err("Invalid attribute leftof".to_string()),
+            ast::Key::RightOf => Err("Invalid attribute rightof".to_string()),
+        };
+    }
+
+    Ok(val)
+}
+
+fn extract_color<'input>(
+    attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
+) -> Result<Option<&'input str>> {
+    match attributes.remove(&ast::Key::Color) {
+        Some(value) => match value {
+            ast::Value::Identifier(identifier) => match crate::colors::COLORS.get(identifier) {
+                Some(color) => Ok(Some(color)),
+                None => Err(format!("Invalid color {identifier}")),
+            },
+            ast::Value::HexColor(hcolor) => Ok(Some(hcolor)),
+            ast::Value::Quoted(_) => Err("Attribute color cannot be a string".to_string()),
+        },
+        None => Ok(None),
+    }
+}
+
+fn extract_position<'input>(
+    attributes: &mut HashMap<ast::Key, ast::Value<'input>>,
+) -> Result<Option<ir::Position<'input>>> {
+    let leftof = match attributes.remove(&ast::Key::LeftOf) {
+        Some(value) => match value {
+            ast::Value::Identifier(identifier) => Some(ir::Position::LeftOf(identifier)),
+            ast::Value::Quoted(_) => {
+                return Err("Attribute leftof cannot be a string".to_string());
+            }
+            ast::Value::HexColor(_) => {
+                return Err("Attribute leftof cannot be an hexcolor".to_string());
+            }
+        },
+        None => None,
+    };
+
+    let rightof = match attributes.remove(&ast::Key::RightOf) {
+        Some(value) => match value {
+            ast::Value::Identifier(identifier) => Some(ir::Position::RightOf(identifier)),
+            ast::Value::Quoted(_) => {
+                return Err("Attribute rightof cannot be a string".to_string());
+            }
+            ast::Value::HexColor(_) => {
+                return Err("Attribute rightof cannot be an hexcolor".to_string());
+            }
+        },
+        None => None,
+    };
+
+    if leftof.is_some() && rightof.is_some() {
+        return Err("Cannot set both leftof and rightof attributes".to_string());
+    }
+
+    Ok(leftof.or(rightof))
 }

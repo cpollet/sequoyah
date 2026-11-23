@@ -1,4 +1,4 @@
-component "browser" as b [color=salmon];
+component "browser" as b [color=salmon,];
 component "server" as s;
 database "database" as d;
 

@@ -126,7 +126,7 @@ impl<'input> From<(Key, Value<'input>)> for Attribute<'input> {
 }
 
 #[allow(unused)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
     Color,
     LeftOf,
