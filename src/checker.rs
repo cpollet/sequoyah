@@ -74,6 +74,7 @@ impl<'input> TryFrom<ast::Event<'input>> for ir::Event<'input> {
         match value {
             ast::Event::Message(message) => ir::Message::try_from(message).map(ir::Event::Message),
             ast::Event::Note(note) => ir::Note::try_from(note).map(ir::Event::Note),
+            ast::Event::Divider(text) => ir::Divider::try_from(text).map(ir::Event::Divider),
         }
     }
 }
@@ -148,6 +149,14 @@ impl<'input> TryFrom<ast::Overlay<'input>> for ir::Overlay<'input> {
             components: value.components,
             color: no_other(&mut attributes, extract_color)?,
         })
+    }
+}
+
+impl<'input> TryFrom<ast::Divider<'input>> for ir::Divider<'input> {
+    type Error = Error;
+
+    fn try_from(value: ast::Divider<'input>) -> std::result::Result<Self, Self::Error> {
+        Ok(ir::Divider { text: value.text })
     }
 }
 

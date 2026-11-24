@@ -16,6 +16,8 @@ b -x s [color=#ff0000, ] : GET /path "lol"\n2nd line {}
         note [leftof=d, color=olive] "text"
         return [color=orange] : ok
     }
+    == divider\nfails
+    ==
     note "across"
     return [color=#ff0000, ] : data
 }

@@ -16,7 +16,6 @@ pub struct Component<'input> {
     pub kind: ComponentKind,
     pub name: Cow<'input, str>,
     pub identifier: &'input str,
-    //pub attributes: Attributes<'input>,
     pub color: Option<Color<'input>>,
 }
 
@@ -40,32 +39,10 @@ pub struct Message<'input> {
 pub enum Event<'input> {
     Message(Message<'input>),
     Note(Note<'input>),
+    Divider(Divider<'input>),
 }
 
 pub type Events<'input> = Vec<Event<'input>>;
-
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
-// pub enum ArrowHead {
-//     #[default]
-//     None,
-//     Thick,
-//     Thin,
-//     Lost,
-// }
-//
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-// pub enum ArrowBody {
-//     Solid,
-//     Dash,
-// }
-//
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-// pub enum ArrowDirection {
-//     Ltr,
-//     Rtl,
-//     Bi,
-//     None,
-// }
 
 #[allow(unused)]
 #[derive(Debug)]
@@ -116,4 +93,10 @@ pub enum Position<'input> {
     LeftOf(&'input str),
     Right,
     RightOf(&'input str),
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Divider<'input> {
+    pub text: Cow<'input, str>,
 }

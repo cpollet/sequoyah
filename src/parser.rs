@@ -1,8 +1,8 @@
 use crate::ast::{
-    Activation, Attribute, Component, ComponentKind, Event, Events, Graph, Message, Note, Overlay,
-    Overlays, Value,
+    Activation, Attribute, Component, ComponentKind, Divider, Event, Events, Graph, Message, Note,
+    Overlay, Overlays, Value,
 };
-use crate::lexer::{PeekableLexer, Token};
+use crate::lexer::{Location, PeekableLexer, Token};
 use std::borrow::Cow;
 
 type Lexer<'input> = PeekableLexer<'input>;
@@ -126,6 +126,7 @@ fn parse_event<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Event<'input>
     Ok(match lexer.peek() {
         Some(Token::Identifier(..)) => parse_message(lexer)?.map(Event::Message),
         Some(Token::Note(..)) => parse_note(lexer)?.map(Event::Note),
+        Some(Token::EqualEqual(_)) => parse_divider(lexer).map(Event::Divider),
         Some(token) => {
             return Err(format!(
                 "Expected identifier or Note, got {token} at {span}",
@@ -142,7 +143,7 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Message<'in
     };
 
     if !lexer.skip_whitespace() {
-        let (line, column) = lexer.location();
+        let Location { line, column } = lexer.location();
         return Err(format!(
             "Expected whitespace at {}:{}",
             line + 1,
@@ -162,7 +163,7 @@ fn parse_message<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Message<'in
     };
 
     if !lexer.skip_whitespace() {
-        let (line, column) = lexer.location();
+        let Location { line, column } = lexer.location();
         return Err(format!(
             "Expected whitespace at {}:{}",
             line + 1,
@@ -264,6 +265,7 @@ fn parse_attributes<'input>(lexer: &mut Lexer<'input>) -> Result<Vec<Attribute<'
 }
 
 fn parse_message_text<'input>(lexer: &mut Lexer<'input>) -> Option<Cow<'input, str>> {
+    // fixme do we have an issue when no message is provided after the ':'?
     lexer
         .next_if(|token| matches!(token, Token::Colon(_)))
         .map(|_| lexer.unquoted_string())
@@ -347,6 +349,25 @@ fn parse_note<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Note<'input>>>
     };
 
     Ok(Some(Note { text, attributes }))
+}
+
+fn parse_divider<'input>(lexer: &mut Lexer<'input>) -> Option<Divider<'input>> {
+    lexer.next_if(|token| matches!(token, Token::EqualEqual(_)))?;
+
+    let current_line = lexer.location().line;
+    lexer.skip_whitespace();
+
+    if lexer.location().line > current_line {
+        return Some(Divider {
+            text: Cow::Borrowed(""),
+        });
+    }
+
+    let Token::UnquotedString(_, text) = lexer.unquoted_string() else {
+        unreachable!()
+    };
+
+    Some(Divider { text })
 }
 
 fn parse_overlays<'input>(lexer: &mut Lexer<'input>) -> Result<Overlays<'input>> {

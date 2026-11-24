@@ -47,6 +47,7 @@ pub struct Message<'input> {
 pub enum Event<'input> {
     Message(Message<'input>),
     Note(Note<'input>),
+    Divider(Divider<'input>),
 }
 
 pub type Events<'input> = Vec<Event<'input>>;
@@ -160,4 +161,10 @@ pub type Overlays<'input> = Vec<Overlay<'input>>;
 pub struct Note<'input> {
     pub text: Cow<'input, str>,
     pub attributes: Attributes<'input>,
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Divider<'input> {
+    pub text: Cow<'input, str>,
 }

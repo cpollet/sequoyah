@@ -22,8 +22,8 @@ trait Emitter {
 pub mod plantuml {
     use crate::emitter::{Emit, Emitter};
     use crate::ir::{
-        Arrow, ArrowBody, ArrowDirection, ArrowHead, Component, ComponentKind, Event, Graph,
-        Message, Note, Position, Shape,
+        Arrow, ArrowBody, ArrowDirection, ArrowHead, Component, ComponentKind, Divider, Event,
+        Graph, Message, Note, Position, Shape,
     };
     use std::fmt::Write;
 
@@ -71,6 +71,7 @@ pub mod plantuml {
             match event {
                 Event::Message(message) => self.emit_message(message),
                 Event::Note(note) => self.emit_note(note),
+                Event::Divider(divider) => self.emit_divider(divider),
             }
         }
 
@@ -81,7 +82,7 @@ pub mod plantuml {
 
             if let Some(message) = message.text.as_ref() {
                 self.output += " : ";
-                self.emit_message_text(message);
+                self.emit_unquoted_string(message);
             }
 
             self.output += "\n";
@@ -180,7 +181,7 @@ pub mod plantuml {
             self.output += "\"";
         }
 
-        fn emit_message_text(&mut self, text: &str) {
+        fn emit_unquoted_string(&mut self, text: &str) {
             for c in text.chars() {
                 match c {
                     '\\' => self.output += "\\\\",
@@ -223,6 +224,12 @@ pub mod plantuml {
                 self.output += "\n";
             }
             self.output += "end note\n";
+        }
+
+        fn emit_divider(&mut self, divider: &Divider) {
+            self.output += "== ";
+            self.emit_unquoted_string(divider.text.as_ref());
+            self.output += " ==\n";
         }
     }
 

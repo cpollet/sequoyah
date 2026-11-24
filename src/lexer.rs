@@ -5,7 +5,6 @@ use regex::Regex;
 use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 use std::mem;
-use std::str::Chars;
 use std::sync::LazyLock;
 
 pub struct Lexer<'input> {
@@ -104,9 +103,10 @@ impl<'input> Lexer<'input> {
         )
     }
 
-    fn make_quoted_string(&self, mut chars: Chars) -> Token<'input> {
+    fn make_quoted_string(&self) -> Token<'input> {
         //todo use descape crate?
         let mut consumed = 1; // the initial '"' is already consumed
+        let mut chars = self.remaining[1..].chars();
 
         let mut owned = None;
 
@@ -205,7 +205,7 @@ impl<'input> Lexer<'input> {
         }
     }
 
-    /// Skips whitespaces and comments, returns `(consumed chars, current line, current column)`
+    /// Skips whitespaces and comments, returns `true` if it consumed whitespaces
     fn skip_whitespace(&mut self) -> bool {
         let mut chars = self.remaining.chars();
         let mut consumed = 0;
@@ -249,8 +249,11 @@ impl<'input> Lexer<'input> {
         consumed > 0
     }
 
-    pub fn location(&self) -> (usize, usize) {
-        (self.line, self.column)
+    pub fn location(&self) -> Location {
+        Location {
+            line: self.line,
+            column: self.column,
+        }
     }
 
     pub fn unquoted_string(&mut self) -> Token<'input> {
@@ -275,7 +278,7 @@ impl<'input> Lexer<'input> {
                 }
                 Some('\\') => {
                     if owned.is_none() {
-                        owned = Some(self.remaining[1..consumed].to_string());
+                        owned = Some(self.remaining[0..consumed].to_string());
                     }
                     match chars.next() {
                         Some('n') => {
@@ -393,7 +396,7 @@ impl<'input> Iterator for Lexer<'input> {
                 line: self.line,
                 column: self.column,
             }),
-            '"' => self.make_quoted_string(chars),
+            '"' => self.make_quoted_string(),
             '[' => Token::LBracket(Span {
                 start: self.start,
                 length: 1,
@@ -418,12 +421,20 @@ impl<'input> Iterator for Lexer<'input> {
                 line: self.line,
                 column: self.column,
             }),
-            '=' => Token::Equal(Span {
-                start: self.start,
-                length: 1,
-                line: self.line,
-                column: self.column,
-            }),
+            '=' => match chars.next() {
+                Some('=') => Token::EqualEqual(Span {
+                    start: self.start,
+                    length: 2,
+                    line: self.line,
+                    column: self.column,
+                }),
+                _ => Token::Equal(Span {
+                    start: self.start,
+                    length: 1,
+                    line: self.line,
+                    column: self.column,
+                }),
+            },
             '#' => self.make_color(),
             _ => Token::Invalid(
                 Span {
@@ -460,7 +471,7 @@ impl<'input> PeekableLexer<'input> {
         self.lexer.unquoted_string()
     }
 
-    pub fn location(&self) -> (usize, usize) {
+    pub fn location(&self) -> Location {
         self.lexer.location()
     }
 
@@ -523,6 +534,7 @@ pub enum Token<'input> {
     LCurly(Span),
     RCurly(Span),
     Equal(Span),
+    EqualEqual(Span),
     Comma(Span),
     Colon(Span),
     Semicolon(Span),
@@ -559,6 +571,7 @@ impl Token<'_> {
             | Token::LCurly(span)
             | Token::RCurly(span)
             | Token::Equal(span)
+            | Token::EqualEqual(span)
             | Token::Comma(span)
             | Token::Colon(span)
             | Token::Semicolon(span)
@@ -592,6 +605,7 @@ impl Display for Token<'_> {
             Token::LCurly(_) => write!(f, "LCurly"),
             Token::RCurly(_) => write!(f, "RCurly"),
             Token::Equal(_) => write!(f, "Equal"),
+            Token::EqualEqual(_) => write!(f, "EqualEqual"),
             Token::Comma(_) => write!(f, "Comma"),
             Token::Colon(_) => write!(f, "Colon"),
             Token::Semicolon(_) => write!(f, "Semicolon"),
@@ -612,6 +626,13 @@ impl Display for Span {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "line {}, column {}", self.line + 1, self.column + 1)
     }
+}
+
+pub struct Location {
+    /// 0-based line
+    pub line: usize,
+    /// 0-based column
+    pub column: usize,
 }
 
 #[cfg(test)]
@@ -1087,6 +1108,34 @@ mod tests {
             Token::RCurly(Span {
                 start: 0,
                 length: 1,
+                line: 0,
+                column: 0
+            },),
+            "^"
+        );
+    }
+
+    #[test]
+    fn equal() {
+        assert_token!(
+            "=^",
+            Token::Equal(Span {
+                start: 0,
+                length: 1,
+                line: 0,
+                column: 0
+            },),
+            "^"
+        );
+    }
+
+    #[test]
+    fn equal_equal() {
+        assert_token!(
+            "==^",
+            Token::EqualEqual(Span {
+                start: 0,
+                length: 2,
                 line: 0,
                 column: 0
             },),
