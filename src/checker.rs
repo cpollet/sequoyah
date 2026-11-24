@@ -1,3 +1,4 @@
+use crate::ir::Shape;
 use crate::{ast, ir};
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -128,6 +129,7 @@ impl<'input> TryFrom<ast::Note<'input>> for ir::Note<'input> {
         Ok(ir::Note {
             text: value.text,
             color: extract_color(&mut attributes)?,
+            shape: extract_shape(&mut attributes)?,
             position: no_other(&mut attributes, extract_position)?,
         })
     }
@@ -194,11 +196,6 @@ fn extract_position<'input>(
 ) -> Result<Option<ir::Position<'input>>> {
     let mut position = None;
 
-    // todo implement across with a list of identifiers
-    // todo implement rnote, hnote
-    // todo implement aligned notes (/)
-    // todo implement formatting (markdown?)
-
     for (attribute, mapper) in [
         ("leftof", Box::new(|v| ir::Position::LeftOf(v))),
         ("rightof", Box::new(|v| ir::Position::RightOf(v))),
@@ -211,7 +208,7 @@ fn extract_position<'input>(
                     return Err(format!("Attribute {attribute} cannot be a string"));
                 }
                 ast::Value::HexColor(_) => {
-                    return Err(format!("Attribute {attribute} cannot be an hexcolor"));
+                    return Err(format!("Attribute {attribute} cannot be an hex color"));
                 }
                 ast::Value::Boolean(_) => {
                     return Err(format!("Attribute {attribute} cannot be a boolean"));
@@ -240,7 +237,7 @@ fn extract_position<'input>(
                     return Err(format!("Attribute {attribute} cannot be a string"));
                 }
                 ast::Value::HexColor(_) => {
-                    return Err(format!("Attribute {attribute} cannot be an hexcolor"));
+                    return Err(format!("Attribute {attribute} cannot be an hex color"));
                 }
                 ast::Value::Boolean(_) => Some(ir_position),
             },
@@ -258,4 +255,22 @@ fn extract_position<'input>(
     }
 
     Ok(position)
+}
+
+fn extract_shape(attributes: &mut HashMap<ast::Key, ast::Value>) -> Result<Option<Shape>> {
+    if let Some(shape) = attributes.remove("shape") {
+        match shape {
+            ast::Value::Identifier("rectangle") => Ok(Some(Shape::Rectangle)),
+            ast::Value::Identifier("hexagonal") => Ok(Some(Shape::Hexagonal)),
+            ast::Value::Identifier("default") => Ok(Some(Shape::Default)),
+            ast::Value::Identifier(identifier) => {
+                Err(format!("Invalid value '{identifier}' for shape attribute"))
+            }
+            ast::Value::Quoted(_) => Err("Attribute shape cannot be a string".to_string()),
+            ast::Value::HexColor(_) => Err("Attribute shape cannot be an hex color".to_string()),
+            ast::Value::Boolean(_) => Err("Attribute shape cannot be a boolean".to_string()),
+        }
+    } else {
+        Ok(None)
+    }
 }

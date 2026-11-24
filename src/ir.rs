@@ -98,7 +98,15 @@ pub type Overlays<'input> = Vec<Overlay<'input>>;
 pub struct Note<'input> {
     pub text: Cow<'input, str>,
     pub color: Option<Color<'input>>,
+    pub shape: Option<Shape>,
     pub position: Option<Position<'input>>,
+}
+
+#[derive(Debug)]
+pub enum Shape {
+    Default,
+    Rectangle,
+    Hexagonal,
 }
 
 #[derive(Debug)]

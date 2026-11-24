@@ -23,7 +23,7 @@ pub mod plantuml {
     use crate::emitter::{Emit, Emitter};
     use crate::ir::{
         Arrow, ArrowBody, ArrowDirection, ArrowHead, Component, ComponentKind, Event, Graph,
-        Message, Note, Position,
+        Message, Note, Position, Shape,
     };
     use std::fmt::Write;
 
@@ -191,7 +191,16 @@ pub mod plantuml {
         }
 
         fn emit_note(&mut self, note: &Note) {
-            self.output += "note ";
+            // todo implement across with a list of identifiers
+            // todo implement aligned notes (/)
+            // todo implement formatting (markdown?)
+
+            match note.shape {
+                None | Some(Shape::Default) => self.output += "note ",
+                Some(Shape::Rectangle) => self.output += "rnote ",
+                Some(Shape::Hexagonal) => self.output += "hnote ",
+            }
+
             match note.position {
                 None | Some(Position::Across) => self.output += "across",
                 Some(Position::Left) => self.output += "left",
