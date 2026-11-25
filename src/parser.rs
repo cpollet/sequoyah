@@ -1,6 +1,6 @@
 use crate::ast::{
-    Activation, Attribute, Component, ComponentKind, Divider, Event, Events, Graph, Message, Note,
-    Overlay, Overlays, Value,
+    Activation, Attribute, Component, ComponentKind, Divider, Event, Events, Graph, Later, Message,
+    Note, Overlay, Overlays, Value,
 };
 use crate::lexer::{Location, PeekableLexer, Token};
 use std::borrow::Cow;
@@ -127,6 +127,7 @@ fn parse_event<'input>(lexer: &mut Lexer<'input>) -> Result<Option<Event<'input>
         Some(Token::Identifier(..)) => parse_message(lexer)?.map(Event::Message),
         Some(Token::Note(..)) => parse_note(lexer)?.map(Event::Note),
         Some(Token::EqualEqual(_)) => parse_divider(lexer).map(Event::Divider),
+        Some(Token::DotDotDot(_)) => parse_later(lexer).map(Event::Later),
         Some(token) => {
             return Err(format!(
                 "Expected identifier or Note, got {token} at {span}",
@@ -368,6 +369,25 @@ fn parse_divider<'input>(lexer: &mut Lexer<'input>) -> Option<Divider<'input>> {
     };
 
     Some(Divider { text })
+}
+
+fn parse_later<'input>(lexer: &mut Lexer<'input>) -> Option<Later<'input>> {
+    lexer.next_if(|token| matches!(token, Token::DotDotDot(_)))?;
+
+    let current_line = lexer.location().line;
+    lexer.skip_whitespace();
+
+    if lexer.location().line > current_line {
+        return Some(Later {
+            text: Cow::Borrowed(""),
+        });
+    }
+
+    let Token::UnquotedString(_, text) = lexer.unquoted_string() else {
+        unreachable!()
+    };
+
+    Some(Later { text })
 }
 
 fn parse_overlays<'input>(lexer: &mut Lexer<'input>) -> Result<Overlays<'input>> {

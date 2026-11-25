@@ -107,6 +107,7 @@ fn resolve_event<'input>(
         Event::Message(message) => resolve_message(message, component_map).map(Event::Message),
         Event::Note(note) => resolve_note(note, component_map).map(Event::Note),
         Event::Divider(divider) => Some(Event::Divider(divider)),
+        Event::Later(later) => Some(Event::Later(later)),
     }
 }
 

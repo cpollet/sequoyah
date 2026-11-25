@@ -435,6 +435,26 @@ impl<'input> Iterator for Lexer<'input> {
                     column: self.column,
                 }),
             },
+            '.' => {
+                if let (Some('.'), Some('.')) = (chars.next(), chars.next()) {
+                    Token::DotDotDot(Span {
+                        start: self.start,
+                        length: 3,
+                        line: self.line,
+                        column: self.column,
+                    })
+                } else {
+                    Token::Invalid(
+                        Span {
+                            start: self.start,
+                            length: 1,
+                            line: self.line,
+                            column: self.column,
+                        },
+                        &self.remaining[0..1],
+                    )
+                }
+            }
             '#' => self.make_color(),
             _ => Token::Invalid(
                 Span {
@@ -535,6 +555,7 @@ pub enum Token<'input> {
     RCurly(Span),
     Equal(Span),
     EqualEqual(Span),
+    DotDotDot(Span),
     Comma(Span),
     Colon(Span),
     Semicolon(Span),
@@ -572,6 +593,7 @@ impl Token<'_> {
             | Token::RCurly(span)
             | Token::Equal(span)
             | Token::EqualEqual(span)
+            | Token::DotDotDot(span)
             | Token::Comma(span)
             | Token::Colon(span)
             | Token::Semicolon(span)
@@ -606,6 +628,7 @@ impl Display for Token<'_> {
             Token::RCurly(_) => write!(f, "RCurly"),
             Token::Equal(_) => write!(f, "Equal"),
             Token::EqualEqual(_) => write!(f, "EqualEqual"),
+            Token::DotDotDot(_) => write!(f, "DotDotDot"),
             Token::Comma(_) => write!(f, "Comma"),
             Token::Colon(_) => write!(f, "Colon"),
             Token::Semicolon(_) => write!(f, "Semicolon"),
@@ -1154,6 +1177,54 @@ mod tests {
                 column: 0
             },),
             "^"
+        );
+    }
+
+    #[test]
+    fn dot_dot_dot() {
+        assert_token!(
+            "...^",
+            Token::DotDotDot(Span {
+                start: 0,
+                length: 3,
+                line: 0,
+                column: 0
+            },),
+            "^"
+        );
+    }
+
+    #[test]
+    fn dot() {
+        assert_token!(
+            ".^",
+            Token::Invalid(
+                Span {
+                    start: 0,
+                    length: 1,
+                    line: 0,
+                    column: 0
+                },
+                "."
+            ),
+            "^"
+        );
+    }
+
+    #[test]
+    fn dot_dot() {
+        assert_token!(
+            "..^",
+            Token::Invalid(
+                Span {
+                    start: 0,
+                    length: 1,
+                    line: 0,
+                    column: 0
+                },
+                "."
+            ),
+            ".^"
         );
     }
 

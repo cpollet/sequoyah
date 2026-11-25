@@ -23,7 +23,7 @@ pub mod plantuml {
     use crate::emitter::{Emit, Emitter};
     use crate::ir::{
         Arrow, ArrowBody, ArrowDirection, ArrowHead, Component, ComponentKind, Divider, Event,
-        Graph, Message, Note, Position, Shape,
+        Graph, Later, Message, Note, Position, Shape,
     };
     use std::fmt::Write;
 
@@ -72,6 +72,7 @@ pub mod plantuml {
                 Event::Message(message) => self.emit_message(message),
                 Event::Note(note) => self.emit_note(note),
                 Event::Divider(divider) => self.emit_divider(divider),
+                Event::Later(later) => self.emit_later(later),
             }
         }
 
@@ -230,6 +231,12 @@ pub mod plantuml {
             self.output += "== ";
             self.emit_unquoted_string(divider.text.as_ref());
             self.output += " ==\n";
+        }
+
+        fn emit_later(&mut self, later: &Later) {
+            self.output += "...";
+            self.emit_unquoted_string(later.text.as_ref());
+            self.output += "...\n";
         }
     }
 

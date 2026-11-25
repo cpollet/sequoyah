@@ -48,6 +48,7 @@ pub enum Event<'input> {
     Message(Message<'input>),
     Note(Note<'input>),
     Divider(Divider<'input>),
+    Later(Later<'input>),
 }
 
 pub type Events<'input> = Vec<Event<'input>>;
@@ -166,5 +167,11 @@ pub struct Note<'input> {
 #[allow(unused)]
 #[derive(Debug)]
 pub struct Divider<'input> {
+    pub text: Cow<'input, str>,
+}
+
+#[allow(unused)]
+#[derive(Debug)]
+pub struct Later<'input> {
     pub text: Cow<'input, str>,
 }

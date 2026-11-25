@@ -74,7 +74,8 @@ impl<'input> TryFrom<ast::Event<'input>> for ir::Event<'input> {
         match value {
             ast::Event::Message(message) => ir::Message::try_from(message).map(ir::Event::Message),
             ast::Event::Note(note) => ir::Note::try_from(note).map(ir::Event::Note),
-            ast::Event::Divider(text) => ir::Divider::try_from(text).map(ir::Event::Divider),
+            ast::Event::Divider(divider) => ir::Divider::try_from(divider).map(ir::Event::Divider),
+            ast::Event::Later(later) => ir::Later::try_from(later).map(ir::Event::Later),
         }
     }
 }
@@ -157,6 +158,14 @@ impl<'input> TryFrom<ast::Divider<'input>> for ir::Divider<'input> {
 
     fn try_from(value: ast::Divider<'input>) -> std::result::Result<Self, Self::Error> {
         Ok(ir::Divider { text: value.text })
+    }
+}
+
+impl<'input> TryFrom<ast::Later<'input>> for ir::Later<'input> {
+    type Error = Error;
+
+    fn try_from(value: ast::Later<'input>) -> std::result::Result<Self, Self::Error> {
+        Ok(ir::Later { text: value.text })
     }
 }
 
